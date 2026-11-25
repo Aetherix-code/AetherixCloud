@@ -83,9 +83,6 @@ release:
     name: AetherixCloud
   draft: false
   prerelease: auto
-  extra_files:
-    - glob: ./dist/caddy_linux_*.tar.gz
-      allow_failure: true
 
 snapshot:
   version_template: "{{ .Tag }}-next"
