@@ -33,7 +33,7 @@ builds:
       - amd64
       - arm64
 
-  - id: ax
+  - id: ax-linux
     main: ./cmd/ax
     binary: ax
     env:
@@ -44,6 +44,20 @@ builds:
       - -s -w -X main.version={{.Version}}
     goos:
       - linux
+    goarch:
+      - amd64
+      - arm64
+
+  - id: ax-darwin
+    main: ./cmd/ax
+    binary: ax
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
       - darwin
     goarch:
       - amd64
@@ -54,7 +68,7 @@ archives:
   - id: linux
     ids:
       - aetherixd
-      - ax
+      - ax-linux
     formats:
       - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -68,7 +82,7 @@ archives:
   # Darwin: ax CLI only (daemon is Linux).
   - id: darwin
     ids:
-      - ax
+      - ax-darwin
     formats:
       - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
