@@ -1,27 +1,34 @@
 import { expect, test, type Page } from '@playwright/test'
 
 /** Mock transport answers Me without a token, so the app boots already authed. */
-async function reachProjects(page: Page) {
+async function reachDashboard(page: Page) {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText('mock data')).toBeVisible()
 }
 
+async function reachProjects(page: Page) {
+  await reachDashboard(page)
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Projects' }).click()
+  await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible({ timeout: 20_000 })
+}
+
 async function loginViaForm(page: Page) {
-  await reachProjects(page)
+  await reachDashboard(page)
   await page.getByRole('button', { name: 'Sign out' }).click()
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
   await page.locator('input[type="email"]').fill('admin@example.com')
   await page.locator('input[type="password"]').fill('demo')
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible({ timeout: 20_000 })
 }
 
 test.describe('dashboard (VITE_MOCK=1)', () => {
-  test('login lands on projects', async ({ page }) => {
+  test('login lands on dashboard overview', async ({ page }) => {
     await loginViaForm(page)
-    await expect(page.getByRole('link', { name: /shop/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /blog/i })).toBeVisible()
+    await expect(page.getByText('Machines')).toBeVisible()
+    await expect(page.getByRole('link', { name: /shop/i }).first()).toBeVisible()
+    await expect(page.getByRole('link', { name: /blog/i }).first()).toBeVisible()
   })
 
   test('project canvas and service panel tabs', async ({ page }) => {
@@ -48,7 +55,7 @@ test.describe('dashboard (VITE_MOCK=1)', () => {
   })
 
   test('cluster machine map', async ({ page }) => {
-    await reachProjects(page)
+    await reachDashboard(page)
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Cluster' }).click()
     await expect(page.getByRole('heading', { name: 'Cluster' })).toBeVisible()
     const map = page.getByLabel('Machine map')
