@@ -6,8 +6,8 @@
 # joins a cluster.
 #
 # Usage (matches CreateJoinToken's InstallCommand):
-#   curl -fsSL https://get.aetherix.cloud/install.sh | sudo sh -s -- --init
-#   curl -fsSL https://get.aetherix.cloud/install.sh | sudo sh -s -- --join <token>
+#   curl -fsSL https://raw.githubusercontent.com/Aetherix-code/AetherixCloud/main/deploy/install.sh | sudo sh -s -- --init
+#   curl -fsSL https://raw.githubusercontent.com/Aetherix-code/AetherixCloud/main/deploy/install.sh | sudo sh -s -- --join <token>
 #
 # Flags:
 #   --init                 create a new cluster on this machine

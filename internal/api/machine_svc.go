@@ -56,7 +56,7 @@ func (s *machineSvc) CreateJoinToken(ctx context.Context, req *connect.Request[v
 	}
 	return connect.NewResponse(&v1.CreateJoinTokenResponse{
 		Token:          tok,
-		InstallCommand: fmt.Sprintf("curl -fsSL https://get.aetherix.cloud/install.sh | sudo sh -s -- --join %s", tok),
+		InstallCommand: fmt.Sprintf("curl -fsSL https://raw.githubusercontent.com/Aetherix-code/AetherixCloud/main/deploy/install.sh | sudo sh -s -- --join %s", tok),
 		ExpiresUnix:    exp.Unix(),
 	}), nil
 }

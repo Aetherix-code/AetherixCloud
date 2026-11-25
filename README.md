@@ -26,7 +26,7 @@ make build
 ## Install on a VPS
 
 ```sh
-curl -fsSL https://get.aetherix.cloud/install.sh | sudo sh -s -- --init --advertise YOUR_PUBLIC_IP
+curl -fsSL https://raw.githubusercontent.com/Aetherix-code/AetherixCloud/main/deploy/install.sh | sudo sh -s -- --init --advertise YOUR_PUBLIC_IP
 ```
 
 Adds Docker, `aetherixd`/`ax`, Corrosion, Caddy, and a systemd unit. Join more machines with the one-line command from `ax machine add --print` or the dashboard.

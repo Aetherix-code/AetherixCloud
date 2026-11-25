@@ -8,10 +8,10 @@ The join token RPC embeds this installer URL (`internal/api/machine_svc.go`):
 
 ```sh
 # First machine — create the cluster
-curl -fsSL https://get.aetherix.cloud/install.sh | sudo sh -s -- --init --advertise YOUR_PUBLIC_IP
+curl -fsSL https://raw.githubusercontent.com/Aetherix-code/AetherixCloud/main/deploy/install.sh | sudo sh -s -- --init --advertise YOUR_PUBLIC_IP
 
 # Additional machines — token from the dashboard or CLI (valid ~1 hour)
-curl -fsSL https://get.aetherix.cloud/install.sh | sudo sh -s -- --join 'axjoin1.…'
+curl -fsSL https://raw.githubusercontent.com/Aetherix-code/AetherixCloud/main/deploy/install.sh | sudo sh -s -- --join 'axjoin1.…'
 ```
 
 From a checkout (no release hosting yet):
