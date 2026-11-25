@@ -1,0 +1,26 @@
+[Unit]
+Description=AetherixCloud node daemon (aetherixd)
+Documentation=https://github.com/aetherix/aetherixcloud
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/aetherixd run --data-dir /var/lib/aetherix
+Restart=always
+RestartSec=5
+TimeoutStopSec=60
+LimitNOFILE=1048576
+# WireGuard, Docker and the embedded registry need root (or CAP_NET_ADMIN +
+# docker group). The install script runs the unit as root.
+Environment=AX_CADDY_BIN=/usr/local/bin/caddy
+# Optional overrides (uncomment or drop an override in
+# /etc/systemd/system/aetherixd.service.d/):
+# Environment=AX_ACME_EMAIL=ops@example.com
+# Environment=AX_DNS_CLOUDFLARE_TOKEN=
+# Environment=AX_INGRESS=off
+# Environment=AX_RESCHEDULE_GRACE=60s
+
+[Install]
+WantedBy=multi-user.target

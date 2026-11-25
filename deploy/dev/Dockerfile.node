@@ -1,0 +1,83 @@
+# syntax=docker/dockerfile:1
+# AetherixCloud dev node: Docker-in-Docker + aetherixd + ax + sidecars.
+# Build from the repo root:  docker build -f deploy/dev/Dockerfile.node -t aetherix/node:dev .
+#
+# Final stage is Debian (not Alpine docker:dind) so glibc Corrosion / railpack
+# musl binaries both run. Docker Engine comes from the official static tarball.
+
+# Keep in sync with the "go" directive of go.mod.
+ARG GO_VERSION=1.26
+FROM golang:${GO_VERSION}-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -o /out/aetherixd ./cmd/aetherixd \
+ && CGO_ENABLED=0 go build -trimpath -o /out/ax ./cmd/ax
+
+# Caddy with the replicated-store storage module (shared certs + ACME locks)
+# and the Cloudflare DNS-01 provider. Recipe: deploy/caddy/build.sh.
+# 2.8.4 fails to compile against current go.uber.org/zap/exp (HandlerOptions removed).
+FROM caddy:2.9.1-builder AS caddy
+COPY deploy/caddy /src/aetherix-caddy
+RUN xcaddy build v2.9.1 \
+      --with github.com/aetherix/aetherixcloud/deploy/caddy=/src/aetherix-caddy \
+      --with github.com/caddy-dns/cloudflare \
+      --output /usr/bin/caddy \
+ && /usr/bin/caddy list-modules | grep -q caddy.storage.aetherix
+
+# Ubuntu 24.04: Corrosion v1.0.0 needs glibc >= 2.39 (bookworm is 2.36).
+FROM ubuntu:24.04
+# Sidecar versions: override CORROSION_VERSION="" to skip (sqlite fallback; no
+# multi-node store replication). Release assets match deploy/install.sh.
+ARG CORROSION_VERSION=v1.0.0
+ARG DOCKER_VERSION=27.5.1
+ARG TARGETARCH
+# Builder pieces (checked against the GitHub release assets):
+#   buildkit:  github.com/moby/buildkit/releases  buildkit-v<ver>.linux-<amd64|arm64>.tar.gz
+#   railpack:  github.com/railwayapp/railpack/releases  railpack-v<ver>-<x86_64|arm64>-unknown-linux-musl.tar.gz
+# The Railpack BuildKit frontend image tag MUST match the CLI version.
+ARG BUILDKIT_VERSION=0.35.1
+ARG RAILPACK_VERSION=0.43.1
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      bash curl ca-certificates git iptables iproute2 wireguard-tools tini \
+      openssh-client libcap2-bin \
+ && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    case "${TARGETARCH:-$(uname -m)}" in \
+      amd64|x86_64)  bk_arch=amd64; rp_arch=x86_64; cor_arch=x86_64; dock_arch=x86_64 ;; \
+      arm64|aarch64) bk_arch=arm64; rp_arch=arm64; cor_arch=aarch64; dock_arch=aarch64 ;; \
+      *) echo "unsupported architecture: ${TARGETARCH:-$(uname -m)}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${dock_arch}/docker-${DOCKER_VERSION}.tgz" \
+      | tar -xz -C /usr/local/bin --strip-components=1; \
+    dockerd --version && docker --version; \
+    if [ -n "${CORROSION_VERSION}" ]; then \
+      curl -fsSL "https://github.com/superfly/corrosion/releases/download/${CORROSION_VERSION}/corrosion-${cor_arch}-unknown-linux-gnu.tar.gz" \
+        | tar -xz -C /tmp; \
+      install -m 0755 "$(find /tmp -type f -name corrosion | head -n 1)" /usr/local/bin/corrosion; \
+      rm -rf /tmp/corrosion*; \
+      corrosion --version; \
+    fi; \
+    curl -fsSL "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-${bk_arch}.tar.gz" \
+      | tar -xz -C /usr/local; \
+    rp="railpack-v${RAILPACK_VERSION}-${rp_arch}-unknown-linux-musl.tar.gz"; \
+    cd /tmp; \
+    curl -fsSLO "https://github.com/railwayapp/railpack/releases/download/v${RAILPACK_VERSION}/${rp}"; \
+    curl -fsSLO "https://github.com/railwayapp/railpack/releases/download/v${RAILPACK_VERSION}/checksums.txt"; \
+    grep " ${rp}\$" checksums.txt | sha256sum -c -; \
+    tar -xzf "${rp}" railpack; \
+    install -m 0755 railpack /usr/local/bin/railpack; \
+    rm -f "${rp}" checksums.txt railpack; \
+    buildkitd --version && buildctl --version && railpack --version
+ENV AX_RAILPACK_FRONTEND=ghcr.io/railwayapp/railpack-frontend:v${RAILPACK_VERSION} \
+    AX_BUILDKIT_ADDR=unix:///run/buildkit/buildkitd.sock
+COPY --from=build /out/aetherixd /out/ax /usr/local/bin/
+COPY --from=caddy /usr/bin/caddy /usr/local/bin/caddy
+COPY deploy/dev/entrypoint.sh /usr/local/bin/ax-entrypoint
+COPY deploy/dev/daemon.json /etc/docker/daemon.json
+COPY deploy/dev/buildkitd.toml /etc/buildkit/buildkitd.toml
+RUN chmod +x /usr/local/bin/ax-entrypoint
+VOLUME ["/var/lib/aetherix", "/var/lib/docker", "/var/lib/buildkit"]
+EXPOSE 80 443 8443 51820/udp
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/ax-entrypoint"]

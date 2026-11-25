@@ -1,0 +1,38 @@
+// LogService: container and build logs.
+syntax = "proto3";
+
+package aetherix.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service LogService {
+  // StreamLogs streams container logs for a service (all replicas, merged) or
+  // one replica. Node-specific: the receiving node proxies over the mesh to
+  // the machine that owns each replica.
+  rpc StreamLogs(StreamLogsRequest) returns (stream LogEntry);
+  // StreamBuildLogs streams (and replays) build output.
+  rpc StreamBuildLogs(StreamBuildLogsRequest) returns (stream LogEntry);
+}
+
+message StreamLogsRequest {
+  string service_id = 1;
+  string replica_id = 2;  // "" => all replicas
+  bool follow = 3;
+  int32 tail = 4;         // number of past lines (0 => 100, -1 => all)
+  google.protobuf.Timestamp since = 5;
+  bool timestamps = 6;
+}
+
+message LogEntry {
+  google.protobuf.Timestamp time = 1;
+  string replica_id = 2;
+  string machine_id = 3;
+  // "stdout" | "stderr" | "system"
+  string stream = 4;
+  string line = 5;
+}
+
+message StreamBuildLogsRequest {
+  string build_id = 1;
+  bool follow = 2;
+}

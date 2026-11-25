@@ -1,0 +1,88 @@
+# Multi-arch releases for aetherixd + ax.
+# Builds the SPA first (`make web`) so go:embed ships the dashboard.
+#
+#   goreleaser release --clean
+#   goreleaser release --snapshot --clean
+#
+# CGO is forced off so the embedded registry builds on every target.
+# Optional CI: run deploy/caddy/build.sh per arch and place
+# dist/caddy_linux_{amd64,arm64}.tar.gz so install.sh prefers that binary.
+
+version: 2
+
+project_name: aetherixcloud
+
+before:
+  hooks:
+    - make web
+    - go mod tidy
+
+builds:
+  - id: aetherixd
+    main: ./cmd/aetherixd
+    binary: aetherixd
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+  - id: ax
+    main: ./cmd/ax
+    binary: ax
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    builds:
+      - aetherixd
+      - ax
+    # Matches deploy/install.sh: aetherixcloud_<ver>_linux_<arch>.tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: false
+    files:
+      - deploy/aetherixd.service
+      - deploy/install.sh
+      - deploy/docker-daemon.json
+      - README.md
+      - docs/**/*
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  draft: false
+  prerelease: auto
+  extra_files:
+    - glob: ./dist/caddy_linux_*.tar.gz
+      allow_failure: true
+
+snapshot:
+  version_template: "{{ .Tag }}-next"

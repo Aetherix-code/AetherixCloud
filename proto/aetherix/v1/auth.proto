@@ -1,0 +1,170 @@
+// AuthService: users, sessions and API tokens.
+//
+// OWNERSHIP: handlers are implemented by the auth-api worker. Sessions are
+// JWTs signed with the cluster key (valid on every node).
+syntax = "proto3";
+
+package aetherix.v1;
+
+import "aetherix/v1/types.proto";
+import "google/protobuf/timestamp.proto";
+
+service AuthService {
+  // Login exchanges credentials for a session JWT.
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc Me(MeRequest) returns (MeResponse);
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+  // CreateApiToken returns the plaintext token ONCE.
+  rpc CreateApiToken(CreateApiTokenRequest) returns (CreateApiTokenResponse);
+  rpc ListApiTokens(ListApiTokensRequest) returns (ListApiTokensResponse);
+  rpc RevokeApiToken(RevokeApiTokenRequest) returns (RevokeApiTokenResponse);
+
+  // GetSetupStatus (public) reports whether the first user still has to be
+  // created.
+  rpc GetSetupStatus(GetSetupStatusRequest) returns (GetSetupStatusResponse);
+  // Bootstrap (public) creates the first owner. Only works while no user
+  // exists and requires an admin API token (printed by `ax machine init`).
+  rpc Bootstrap(BootstrapRequest) returns (LoginResponse);
+
+  // ListAuditLog returns the audit log, newest first (admin).
+  rpc ListAuditLog(ListAuditLogRequest) returns (ListAuditLogResponse);
+  // ListOAuthGrants lists active MCP connector grants (own grants; admins
+  // see all). RevokeOAuthGrant revokes a grant and its tokens on all nodes.
+  rpc ListOAuthGrants(ListOAuthGrantsRequest) returns (ListOAuthGrantsResponse);
+  rpc RevokeOAuthGrant(RevokeOAuthGrantRequest) returns (RevokeOAuthGrantResponse);
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+message LoginResponse {
+  string session_token = 1;
+  User user = 2;
+  int64 expires_unix = 3;
+}
+
+message LogoutRequest {}
+message LogoutResponse {}
+
+message MeRequest {}
+message MeResponse {
+  User user = 1;
+  // Scopes of the credential used for this call.
+  repeated string scopes = 2;
+}
+
+message CreateUserRequest {
+  string email = 1;
+  string name = 2;
+  string password = 3;
+  Role role = 4;
+}
+message CreateUserResponse {
+  User user = 1;
+}
+
+message ListUsersRequest {}
+message ListUsersResponse {
+  repeated User users = 1;
+}
+
+message UpdateUserRequest {
+  string user_id = 1;
+  optional string name = 2;
+  optional Role role = 3;
+  optional string password = 4;
+}
+message UpdateUserResponse {
+  User user = 1;
+}
+
+message DeleteUserRequest {
+  string user_id = 1;
+}
+message DeleteUserResponse {}
+
+message CreateApiTokenRequest {
+  string name = 1;
+  repeated string scopes = 2;
+  int32 ttl_seconds = 3;  // 0 => no expiry
+}
+message CreateApiTokenResponse {
+  ApiToken token = 1;
+  string plaintext = 2;
+}
+
+message ListApiTokensRequest {}
+message ListApiTokensResponse {
+  repeated ApiToken tokens = 1;
+}
+
+message RevokeApiTokenRequest {
+  string token_id = 1;
+}
+message RevokeApiTokenResponse {}
+
+message GetSetupStatusRequest {}
+message GetSetupStatusResponse {
+  bool needs_setup = 1;
+}
+
+message BootstrapRequest {
+  string email = 1;
+  string name = 2;
+  string password = 3;
+  // An admin-scoped API token.
+  string admin_token = 4;
+}
+
+message AuditEntry {
+  string id = 1;
+  google.protobuf.Timestamp time = 2;
+  string actor_user_id = 3;
+  string actor_email = 4;
+  // API token or OAuth grant used ("" for sessions).
+  string credential_id = 5;
+  // Agent / connector name, e.g. "ChatGPT" or "cursor-vscode".
+  string client = 6;
+  // "dashboard" | "api" | "mcp"
+  string via = 7;
+  // RPC procedure or MCP tool name.
+  string action = 8;
+  string summary = 9;
+  bool ok = 10;
+  string error = 11;
+  map<string, string> attributes = 12;
+}
+
+message ListAuditLogRequest {
+  string actor_user_id = 1;
+  int32 limit = 2;  // default 100
+  string action_prefix = 3;
+}
+message ListAuditLogResponse {
+  repeated AuditEntry entries = 1;
+}
+
+message OAuthGrant {
+  string id = 1;
+  string client_id = 2;
+  string client_name = 3;
+  string user_id = 4;
+  repeated string scopes = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp last_used_at = 7;
+}
+
+message ListOAuthGrantsRequest {}
+message ListOAuthGrantsResponse {
+  repeated OAuthGrant grants = 1;
+}
+
+message RevokeOAuthGrantRequest {
+  string grant_id = 1;
+}
+message RevokeOAuthGrantResponse {}

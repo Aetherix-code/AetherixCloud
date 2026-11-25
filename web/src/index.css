@@ -1,0 +1,131 @@
+@import 'tailwindcss';
+@import '@xterm/xterm/css/xterm.css';
+@import '@xyflow/react/dist/style.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-ring: var(--ring);
+  --radius-lg: 0.75rem;
+  --radius-md: 0.55rem;
+  --radius-sm: 0.4rem;
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --shadow-soft: var(--shadow-soft);
+}
+
+/* Cool slate + teal — infra/PaaS, not purple-on-white */
+:root {
+  --background: #f3f5f7;
+  --foreground: #0f1720;
+  --card: #ffffff;
+  --muted: #e8edf2;
+  --muted-foreground: #5b6878;
+  --border: #d5dde6;
+  --primary: #0f766e;
+  --primary-foreground: #f0fdfa;
+  --accent: #ccfbf1;
+  --destructive: #dc2626;
+  --success: #15803d;
+  --warning: #c2410c;
+  --ring: #14b8a6;
+  --shadow-soft: 0 1px 2px rgb(15 23 32 / 0.04), 0 8px 24px rgb(15 23 32 / 0.04);
+  --surface-glow: radial-gradient(1200px 600px at 10% -10%, rgb(20 184 166 / 0.12), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgb(14 165 233 / 0.08), transparent 50%);
+}
+.dark {
+  --background: #0b1016;
+  --foreground: #e8eef4;
+  --card: #121821;
+  --muted: #1a222d;
+  --muted-foreground: #8b98a8;
+  --border: #243041;
+  --primary: #2dd4bf;
+  --primary-foreground: #042f2e;
+  --accent: #134e4a;
+  --destructive: #f87171;
+  --success: #4ade80;
+  --warning: #fb923c;
+  --ring: #2dd4bf;
+  --shadow-soft: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 10px 30px rgb(0 0 0 / 0.28);
+  --surface-glow: radial-gradient(1000px 520px at 8% -15%, rgb(45 212 191 / 0.1), transparent 50%),
+    radial-gradient(800px 480px at 100% 0%, rgb(56 189 248 / 0.06), transparent 45%);
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--background);
+  background-image: var(--surface-glow);
+  background-attachment: fixed;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-feature-settings: 'ss01' on, 'cv11' on;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.011em;
+}
+* { border-color: var(--border); }
+code, kbd, pre, .font-mono { font-family: var(--font-mono); letter-spacing: 0; }
+
+/* React Flow theming */
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-attribution-background-color: transparent;
+}
+.react-flow__attribution { display: none; }
+
+.dot-grid {
+  background-color: var(--background);
+  background-image:
+    var(--surface-glow),
+    radial-gradient(color-mix(in oklab, var(--border) 80%, transparent) 1px, transparent 1px);
+  background-size: auto, 22px 22px;
+  background-attachment: fixed, scroll;
+}
+
+.ax-shell {
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--card) 88%, transparent), var(--card));
+  border-color: color-mix(in oklab, var(--border) 85%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: inset -1px 0 0 color-mix(in oklab, var(--border) 55%, transparent);
+}
+
+.ax-panel {
+  box-shadow: var(--shadow-soft);
+}
+
+@keyframes ax-pulse { 0%,100% { opacity: 1 } 50% { opacity: .4 } }
+.ax-pulse { animation: ax-pulse 1.4s ease-in-out infinite; }
+
+@keyframes ax-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.ax-enter { animation: ax-in 200ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+@keyframes ax-row-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.ax-row {
+  animation: ax-row-in 160ms ease-out both;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+.ax-row:hover { transform: translateY(-1px); }

@@ -1,0 +1,103 @@
+// ProjectService: projects, environments and variables.
+syntax = "proto3";
+
+package aetherix.v1;
+
+import "aetherix/v1/types.proto";
+
+service ProjectService {
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+
+  rpc CreateEnvironment(CreateEnvironmentRequest) returns (CreateEnvironmentResponse);
+  rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse);
+  rpc DeleteEnvironment(DeleteEnvironmentRequest) returns (DeleteEnvironmentResponse);
+
+  // ListVariables never returns secret values (redacted = true).
+  rpc ListVariables(ListVariablesRequest) returns (ListVariablesResponse);
+  // SetVariables upserts by (environment, service, key). Secret values are
+  // encrypted with the cluster key and never returned afterwards.
+  rpc SetVariables(SetVariablesRequest) returns (SetVariablesResponse);
+  rpc DeleteVariable(DeleteVariableRequest) returns (DeleteVariableResponse);
+}
+
+message CreateProjectRequest {
+  string name = 1;
+  string description = 2;
+}
+message CreateProjectResponse {
+  Project project = 1;
+  // The default "production" environment created with the project.
+  Environment environment = 2;
+}
+
+message GetProjectRequest {
+  string project = 1;  // ID or name
+}
+message GetProjectResponse {
+  Project project = 1;
+  repeated Environment environments = 2;
+  repeated Service services = 3;
+}
+
+message ListProjectsRequest {}
+message ListProjectsResponse {
+  repeated Project projects = 1;
+}
+
+message DeleteProjectRequest {
+  string project = 1;
+  bool confirm = 2;
+}
+message DeleteProjectResponse {}
+
+message CreateEnvironmentRequest {
+  string project = 1;
+  string name = 2;
+  bool ephemeral = 3;
+  // Copy services+variables from this environment ID ("" = empty).
+  string clone_from = 4;
+}
+message CreateEnvironmentResponse {
+  Environment environment = 1;
+}
+
+message ListEnvironmentsRequest {
+  string project = 1;
+}
+message ListEnvironmentsResponse {
+  repeated Environment environments = 1;
+}
+
+message DeleteEnvironmentRequest {
+  string environment_id = 1;
+}
+message DeleteEnvironmentResponse {}
+
+message ListVariablesRequest {
+  string environment_id = 1;
+  string service_id = 2;  // "" => shared only; "*" => all
+}
+message ListVariablesResponse {
+  repeated Variable variables = 1;
+}
+
+message SetVariablesRequest {
+  string environment_id = 1;
+  string service_id = 2;
+  repeated Variable variables = 3;
+  // Redeploy affected services after setting.
+  bool redeploy = 4;
+}
+message SetVariablesResponse {
+  repeated Variable variables = 1;
+}
+
+message DeleteVariableRequest {
+  string environment_id = 1;
+  string service_id = 2;
+  string key = 3;
+}
+message DeleteVariableResponse {}

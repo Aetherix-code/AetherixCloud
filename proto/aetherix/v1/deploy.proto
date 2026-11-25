@@ -1,0 +1,94 @@
+// DeployService: deployments, compose deploys and rollbacks.
+//
+// OWNERSHIP: rolling-update logic (health-gated, rollback) lives in
+// internal/deploy and is owned by the rolling-deploy worker. The RPC
+// contract below is stable.
+syntax = "proto3";
+
+package aetherix.v1;
+
+import "aetherix/v1/types.proto";
+
+service DeployService {
+  // Deploy creates a new Deployment from the service's current spec (or the
+  // override) and starts rolling it out.
+  rpc Deploy(DeployRequest) returns (DeployResponse);
+  // DeployCompose parses a compose file (with x- extensions) and creates or
+  // updates one service per compose service, then deploys them.
+  rpc DeployCompose(DeployComposeRequest) returns (DeployComposeResponse);
+  rpc GetDeployment(GetDeploymentRequest) returns (GetDeploymentResponse);
+  rpc ListDeployments(ListDeploymentsRequest) returns (ListDeploymentsResponse);
+  // Rollback redeploys a previous deployment's spec and image digest.
+  rpc Rollback(RollbackRequest) returns (RollbackResponse);
+  // CancelDeployment aborts a deployment that is not yet active.
+  rpc CancelDeployment(CancelDeploymentRequest) returns (CancelDeploymentResponse);
+  // WatchDeployment streams status transitions until a terminal status.
+  rpc WatchDeployment(WatchDeploymentRequest) returns (stream Deployment);
+}
+
+message DeployRequest {
+  string service_id = 1;
+  // Optional spec override for this deployment only (not saved on the service).
+  ServiceSpec spec_override = 2;
+  // Reuse the current image instead of building (redeploy).
+  bool redeploy = 3;
+  string commit_sha = 4;
+  string ref = 5;
+}
+message DeployResponse {
+  Deployment deployment = 1;
+}
+
+message DeployComposeRequest {
+  string project = 1;
+  string environment = 2;  // "" => production
+  // Raw compose.yaml contents.
+  string compose_yaml = 3;
+  // Variables used for ${VAR} interpolation.
+  map<string, string> vars = 4;
+  // Only these services ("" => all).
+  repeated string services = 5;
+  // Remove services of the project that are not in the file.
+  bool prune = 6;
+  bool dry_run = 7;
+}
+message DeployComposeResponse {
+  repeated Service services = 1;
+  repeated Deployment deployments = 2;
+  repeated string warnings = 3;
+  repeated string removed = 4;
+}
+
+message GetDeploymentRequest {
+  string deployment_id = 1;
+}
+message GetDeploymentResponse {
+  Deployment deployment = 1;
+  repeated Replica replicas = 2;
+}
+
+message ListDeploymentsRequest {
+  string service_id = 1;
+  int32 limit = 2;
+}
+message ListDeploymentsResponse {
+  repeated Deployment deployments = 1;
+}
+
+message RollbackRequest {
+  string service_id = 1;
+  // "" => the previous successful deployment.
+  string deployment_id = 2;
+}
+message RollbackResponse {
+  Deployment deployment = 1;
+}
+
+message CancelDeploymentRequest {
+  string deployment_id = 1;
+}
+message CancelDeploymentResponse {}
+
+message WatchDeploymentRequest {
+  string deployment_id = 1;
+}

@@ -1,0 +1,12 @@
+# BuildKit config for AetherixCloud builder nodes.
+# The embedded registry listens on plain HTTP on 127.0.0.1:5000 (see internal/registry).
+[registry."127.0.0.1:5000"]
+  http = true
+  insecure = true
+
+[worker.oci]
+  # Keep the build cache bounded (bytes): 10 GiB.
+  gc = true
+  [[worker.oci.gcpolicy]]
+    keepBytes = 10737418240
+    all = true

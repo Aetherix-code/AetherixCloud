@@ -1,0 +1,9 @@
+# TypeScript (protobuf-es v2) generation for the dashboard. `make proto-web`.
+# Services are emitted as GenService descriptors, consumed by @connectrpc/connect.
+version: v2
+plugins:
+  - local: web/node_modules/.bin/protoc-gen-es
+    out: web/src/gen
+    opt:
+      - target=ts
+      - import_extension=none

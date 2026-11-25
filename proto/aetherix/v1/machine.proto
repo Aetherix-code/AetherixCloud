@@ -1,0 +1,125 @@
+// MachineService: membership, join flow and machine lifecycle.
+syntax = "proto3";
+
+package aetherix.v1;
+
+import "aetherix/v1/types.proto";
+
+service MachineService {
+  rpc ListMachines(ListMachinesRequest) returns (ListMachinesResponse);
+  rpc GetMachine(GetMachineRequest) returns (GetMachineResponse);
+  // CreateJoinToken mints a one-time token (default TTL 1h) and the shell
+  // command a new machine runs to join.
+  rpc CreateJoinToken(CreateJoinTokenRequest) returns (CreateJoinTokenResponse);
+  // JoinMachine is called by a NEW machine (token-authenticated, not session
+  // authenticated). It allocates a subnet and returns everything needed to peer.
+  rpc JoinMachine(JoinMachineRequest) returns (JoinMachineResponse);
+  rpc UpdateMachine(UpdateMachineRequest) returns (UpdateMachineResponse);
+  // Cordon/uncordon: stop scheduling new replicas on the machine.
+  rpc CordonMachine(CordonMachineRequest) returns (CordonMachineResponse);
+  // Drain: cordon + move reschedulable replicas elsewhere.
+  rpc DrainMachine(DrainMachineRequest) returns (DrainMachineResponse);
+  rpc RemoveMachine(RemoveMachineRequest) returns (RemoveMachineResponse);
+  // ReportHeartbeat is sent over the mesh by every machine (capacity, usage).
+  rpc ReportHeartbeat(ReportHeartbeatRequest) returns (ReportHeartbeatResponse);
+}
+
+message ListMachinesRequest {}
+message ListMachinesResponse {
+  repeated Machine machines = 1;
+}
+
+message GetMachineRequest {
+  string machine = 1;  // ID or name
+}
+message GetMachineResponse {
+  Machine machine = 1;
+}
+
+message CreateJoinTokenRequest {
+  int32 ttl_seconds = 1;  // default 3600
+  repeated MachineRole roles = 2;
+  string machine_name = 3;  // optional pre-chosen name
+}
+message CreateJoinTokenResponse {
+  // Opaque token "axjoin1.<...>".
+  string token = 1;
+  // e.g. `curl -fsSL https://.../install.sh | sh -s -- --join <token>`
+  string install_command = 2;
+  int64 expires_unix = 3;
+}
+
+message PeerInfo {
+  string machine_id = 1;
+  string name = 2;
+  string public_key = 3;
+  repeated string endpoints = 4;
+  string subnet = 5;
+  string mesh_ip = 6;
+}
+
+message JoinMachineRequest {
+  string token = 1;
+  string name = 2;
+  string public_key = 3;
+  repeated string endpoints = 4;
+  Resources capacity = 5;
+  map<string, string> labels = 6;
+  int32 api_port = 7;
+}
+message JoinMachineResponse {
+  Machine machine = 1;
+  Cluster cluster = 2;
+  // All existing machines the joiner should peer with.
+  repeated PeerInfo peers = 3;
+  // Corrosion gossip bootstrap addresses (mesh IPs with port).
+  repeated string store_bootstrap = 4;
+  // Cluster secret sealed for the joiner (cluster key); base64.
+  string cluster_key = 5;
+}
+
+message UpdateMachineRequest {
+  string machine = 1;
+  optional string name = 2;
+  // If set, replaces the label map / roles wholesale.
+  map<string, string> labels = 3;
+  bool set_labels = 4;
+  repeated MachineRole roles = 5;
+  bool set_roles = 6;
+  repeated string endpoints = 7;
+  bool set_endpoints = 8;
+}
+message UpdateMachineResponse {
+  Machine machine = 1;
+}
+
+message CordonMachineRequest {
+  string machine = 1;
+  bool cordoned = 2;
+}
+message CordonMachineResponse {
+  Machine machine = 1;
+}
+
+message DrainMachineRequest {
+  string machine = 1;
+}
+message DrainMachineResponse {
+  Machine machine = 1;
+  int32 replicas_moved = 2;
+  repeated string stranded_service_ids = 3;
+}
+
+message RemoveMachineRequest {
+  string machine = 1;
+  bool force = 2;
+}
+message RemoveMachineResponse {}
+
+message ReportHeartbeatRequest {
+  string machine_id = 1;
+  Resources used = 2;
+  Resources capacity = 3;
+  int32 containers = 4;
+}
+message ReportHeartbeatResponse {}

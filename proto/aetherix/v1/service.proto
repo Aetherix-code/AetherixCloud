@@ -1,0 +1,151 @@
+// ServiceService: service CRUD, scaling, replicas, domains, exec.
+syntax = "proto3";
+
+package aetherix.v1;
+
+import "aetherix/v1/types.proto";
+
+service ServiceService {
+  rpc CreateService(CreateServiceRequest) returns (CreateServiceResponse);
+  rpc GetService(GetServiceRequest) returns (GetServiceResponse);
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
+  // UpdateService changes the spec. It does NOT deploy; call
+  // DeployService.Deploy to roll the change out.
+  rpc UpdateService(UpdateServiceRequest) returns (UpdateServiceResponse);
+  rpc DeleteService(DeleteServiceRequest) returns (DeleteServiceResponse);
+  // ScaleService sets the replica count (replicated mode) and reconciles now.
+  rpc ScaleService(ScaleServiceRequest) returns (ScaleServiceResponse);
+  rpc RestartService(RestartServiceRequest) returns (RestartServiceResponse);
+
+  rpc ListReplicas(ListReplicasRequest) returns (ListReplicasResponse);
+
+  rpc ListDomains(ListDomainsRequest) returns (ListDomainsResponse);
+  rpc AddDomain(AddDomainRequest) returns (AddDomainResponse);
+  rpc RemoveDomain(RemoveDomainRequest) returns (RemoveDomainResponse);
+
+  // Exec runs a command in a replica's container. The first client message
+  // carries `start`; subsequent messages carry stdin / resize. Proxied over
+  // the mesh to the machine owning the replica.
+  rpc Exec(stream ExecRequest) returns (stream ExecResponse);
+}
+
+message CreateServiceRequest {
+  string project = 1;      // ID or name
+  string environment = 2;  // ID or name ("" => production)
+  string name = 3;
+  ServiceSpec spec = 4;
+  // Deploy immediately after creating.
+  bool deploy = 5;
+}
+message CreateServiceResponse {
+  Service service = 1;
+  Deployment deployment = 2;  // set when deploy = true
+}
+
+message GetServiceRequest {
+  string service = 1;      // ID, or "name" (with project/environment) 
+  string project = 2;
+  string environment = 3;
+}
+message GetServiceResponse {
+  Service service = 1;
+  repeated Replica replicas = 2;
+  repeated Domain domains = 3;
+}
+
+message ListServicesRequest {
+  string project = 1;      // "" => all
+  string environment = 2;  // "" => all
+}
+message ListServicesResponse {
+  repeated Service services = 1;
+}
+
+message UpdateServiceRequest {
+  string service_id = 1;
+  ServiceSpec spec = 2;
+  // Names of top-level ServiceSpec fields to replace; empty => replace all.
+  repeated string update_mask = 3;
+}
+message UpdateServiceResponse {
+  Service service = 1;
+}
+
+message DeleteServiceRequest {
+  string service_id = 1;
+  bool confirm = 2;
+}
+message DeleteServiceResponse {}
+
+message ScaleServiceRequest {
+  string service_id = 1;
+  int32 replicas = 2;
+}
+message ScaleServiceResponse {
+  Service service = 1;
+}
+
+message RestartServiceRequest {
+  string service_id = 1;
+}
+message RestartServiceResponse {}
+
+message ListReplicasRequest {
+  string service_id = 1;  // "" => all services
+  string machine_id = 2;  // "" => all machines
+}
+message ListReplicasResponse {
+  repeated Replica replicas = 1;
+}
+
+message ListDomainsRequest {
+  string service_id = 1;
+}
+message ListDomainsResponse {
+  repeated Domain domains = 1;
+}
+
+message AddDomainRequest {
+  string service_id = 1;
+  string hostname = 2;
+  int32 port = 3;
+}
+message AddDomainResponse {
+  Domain domain = 1;
+  // Human readable DNS verification hints (e.g. "CNAME x -> y").
+  repeated string dns_hints = 2;
+}
+
+message RemoveDomainRequest {
+  string domain_id = 1;
+}
+message RemoveDomainResponse {}
+
+message ExecStart {
+  string service_id = 1;
+  string replica_id = 2;  // "" => first running replica
+  repeated string command = 3;
+  bool tty = 4;
+  bool stdin = 5;
+  int32 rows = 6;
+  int32 cols = 7;
+  map<string, string> env = 8;
+}
+message ExecResize {
+  int32 rows = 1;
+  int32 cols = 2;
+}
+message ExecRequest {
+  oneof msg {
+    ExecStart start = 1;
+    bytes stdin = 2;
+    ExecResize resize = 3;
+  }
+}
+message ExecResponse {
+  oneof msg {
+    bytes stdout = 1;
+    bytes stderr = 2;
+    int32 exit_code = 3;  // final message
+  }
+}

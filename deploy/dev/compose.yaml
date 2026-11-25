@@ -1,0 +1,40 @@
+# Plain docker-compose alternative to `ax dev up` (3 DinD nodes).
+#   docker compose -f deploy/dev/compose.yaml up -d --build
+#   docker compose exec node1 cat /var/lib/aetherix/init.json   # admin token + CA
+# Join tokens for node2/node3: create one with `ax machine token` and put it in
+# AX_JOIN_TOKEN_2 / AX_JOIN_TOKEN_3 (or use `ax dev up`, which does this for you).
+x-node: &node
+  image: aetherix/node:dev
+  build: { context: ../.., dockerfile: deploy/dev/Dockerfile.node }
+  privileged: true
+  restart: "no"
+  devices: ["/dev/net/tun:/dev/net/tun"]
+  environment: &env
+    AX_DEV: "1"
+    AX_CLUSTER_NAME: dev
+
+services:
+  node1:
+    <<: *node
+    hostname: node-1
+    ports: ["127.0.0.1:8443:8443", "127.0.0.1:80:80", "127.0.0.1:443:443"]
+    volumes: ["n1-data:/var/lib/aetherix", "n1-docker:/var/lib/docker"]
+    environment: { <<: *env, AX_INIT: "1", AX_NODE_NAME: node-1, AX_ADVERTISE: 172.29.0.11 }
+    networks: { ax: { ipv4_address: 172.29.0.11 } }
+  node2:
+    <<: *node
+    hostname: node-2
+    volumes: ["n2-data:/var/lib/aetherix", "n2-docker:/var/lib/docker"]
+    environment: { <<: *env, AX_JOIN_TOKEN: "${AX_JOIN_TOKEN_2:-}", AX_NODE_NAME: node-2, AX_ADVERTISE: 172.29.0.12 }
+    networks: { ax: { ipv4_address: 172.29.0.12 } }
+  node3:
+    <<: *node
+    hostname: node-3
+    volumes: ["n3-data:/var/lib/aetherix", "n3-docker:/var/lib/docker"]
+    environment: { <<: *env, AX_JOIN_TOKEN: "${AX_JOIN_TOKEN_3:-}", AX_NODE_NAME: node-3, AX_ADVERTISE: 172.29.0.13 }
+    networks: { ax: { ipv4_address: 172.29.0.13 } }
+
+networks:
+  ax:
+    ipam: { config: [{ subnet: 172.29.0.0/16 }] }
+volumes: { n1-data: {}, n1-docker: {}, n2-data: {}, n2-docker: {}, n3-data: {}, n3-docker: {} }

@@ -1,0 +1,366 @@
+// Shared resource types for the AetherixCloud API.
+//
+// STABILITY: field numbers are never reused. New fields are only appended.
+// All IDs are opaque strings (lowercase ULIDs unless stated otherwise).
+// All timestamps are UTC.
+syntax = "proto3";
+
+package aetherix.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// ---------------------------------------------------------------- machines
+
+// MachineState is the failure-detector view of a machine (SWIM based).
+enum MachineState {
+  MACHINE_STATE_UNSPECIFIED = 0;
+  MACHINE_STATE_UP = 1;
+  MACHINE_STATE_SUSPECT = 2;
+  MACHINE_STATE_DOWN = 3;
+}
+
+// MachineRole controls what a machine may do.
+enum MachineRole {
+  MACHINE_ROLE_UNSPECIFIED = 0;
+  MACHINE_ROLE_WORKER = 1;   // runs service replicas
+  MACHINE_ROLE_INGRESS = 2;  // runs Caddy and receives public traffic
+  MACHINE_ROLE_BUILDER = 3;  // may claim build leases
+}
+
+message Resources {
+  int64 cpu_millis = 1;    // 1000 = one core
+  int64 memory_bytes = 2;
+  int64 disk_bytes = 3;
+}
+
+message Machine {
+  string id = 1;
+  string name = 2;
+  // WireGuard public key (base64).
+  string public_key = 3;
+  // Candidate public endpoints "host:port" for the WireGuard UDP port.
+  repeated string endpoints = 4;
+  // Machine /24 inside the cluster /16, e.g. "10.210.3.0/24".
+  string subnet = 5;
+  // Address of the machine on the mesh, e.g. "10.210.3.1".
+  string mesh_ip = 6;
+  map<string, string> labels = 7;
+  Resources capacity = 8;
+  Resources used = 9;
+  repeated MachineRole roles = 10;
+  MachineState state = 11;
+  bool cordoned = 12;
+  bool draining = 13;
+  google.protobuf.Timestamp last_seen = 14;
+  google.protobuf.Timestamp created_at = 15;
+  // Port of the node API (Connect-RPC), reachable on mesh_ip.
+  int32 api_port = 16;
+  // aetherixd version reported by heartbeat (e.g. "v0.4.0" or "dev").
+  string agent_version = 17;
+  // GOARCH of the running daemon (amd64, arm64, …).
+  string arch = 18;
+  // Upgrade phase for UI: "" | downloading | installing | restarting | pending_restart | failed.
+  string upgrade_status = 19;
+  // Human-readable upgrade error or note (cleared when idle/healthy).
+  string upgrade_message = 20;
+}
+
+message Cluster {
+  string id = 1;
+  string name = 2;
+  // PEM encoded cluster CA certificate.
+  string ca_pem = 3;
+  // Mesh network, e.g. "10.210.0.0/16".
+  string network = 4;
+  // Default domain for generated hostnames ("" until configured).
+  string domain = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+// ---------------------------------------------------------------- projects
+
+message Project {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message Environment {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;  // "production", "pr-12", ...
+  bool ephemeral = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message Variable {
+  string id = 1;
+  string environment_id = 2;
+  // Empty service_id means a shared (environment-wide) variable.
+  string service_id = 3;
+  string key = 4;
+  // Plain value; empty and redacted == true when secret.
+  string value = 5;
+  bool secret = 6;
+  bool redacted = 7;
+}
+
+// ---------------------------------------------------------------- services
+
+enum ServiceMode {
+  SERVICE_MODE_UNSPECIFIED = 0;
+  SERVICE_MODE_REPLICATED = 1;
+  SERVICE_MODE_GLOBAL = 2;
+}
+
+enum DeployStrategy {
+  DEPLOY_STRATEGY_UNSPECIFIED = 0;
+  DEPLOY_STRATEGY_START_FIRST = 1;
+  DEPLOY_STRATEGY_STOP_FIRST = 2;
+}
+
+enum PortProtocol {
+  PORT_PROTOCOL_UNSPECIFIED = 0;
+  PORT_PROTOCOL_TCP = 1;
+  PORT_PROTOCOL_UDP = 2;
+}
+
+// ServicePort publishes a container port.
+message ServicePort {
+  int32 container_port = 1;
+  PortProtocol protocol = 2;
+  // "https"/"http" => routed by Caddy with hostname;
+  // "tcp" => TCP proxy on ingress nodes (published_port → container_port over the mesh);
+  // "host" => bound on the machine running the container;
+  // "internal" => mesh-only. See x-ports.
+  string mode = 3;
+  // Hostname for http/https mode ("" => generated default hostname).
+  string hostname = 4;
+  // Host / public port for mode "host" or "tcp".
+  int32 published_port = 5;
+}
+
+message HealthCheck {
+  // Exactly one of http_path / tcp_port / command should be set.
+  string http_path = 1;
+  int32 http_port = 2;
+  int32 tcp_port = 3;
+  repeated string command = 4;
+  int32 interval_seconds = 5;
+  int32 timeout_seconds = 6;
+  int32 retries = 7;
+  int32 start_period_seconds = 8;
+}
+
+message VolumeMount {
+  // Docker named volume or absolute host path ("bind").
+  string source = 1;
+  string target = 2;
+  bool read_only = 3;
+  // "" / "local" (pinned to one machine) | "backup-restore" (S3 snapshot on reschedule).
+  // See reschedulable volume guard in the rescheduler.
+  string persistence = 4;
+  // Soft size limit in bytes. Applied as the Docker local-driver "size" option
+  // when the named volume is first created. Enforcement requires host quota
+  // support (e.g. XFS+pquota); otherwise the value is stored as intent/label.
+  int64 size_bytes = 5;
+}
+
+message Placement {
+  // Machine names or IDs. Empty = any eligible machine.
+  repeated string machines = 1;
+  // Label equality constraints a machine must satisfy.
+  map<string, string> labels = 2;
+}
+
+message BuildSpec {
+  // "" (auto) | "dockerfile" | "railpack" | "image"
+  string builder = 1;
+  string context = 2;      // root directory (monorepos)
+  string dockerfile = 3;   // path relative to context
+  string target = 4;
+  string build_command = 5;
+  string start_command = 6;
+  map<string, string> args = 7;
+  repeated string watch_paths = 8;
+  string platform = 9;
+}
+
+// ServiceSource says where the image comes from.
+message ServiceSource {
+  // Exactly one of image / github is typically set.
+  string image = 1;
+  GitHubSource github = 2;
+  // Local build context uploaded with `ax up` (opaque upload ID).
+  string upload_id = 3;
+}
+
+message GitHubSource {
+  string repo = 1;  // "owner/name"
+  string branch = 2;
+  int64 installation_id = 3;
+  bool pr_previews = 4;
+}
+
+// ServiceSpec is the immutable-per-deployment description of a service.
+// A Deployment embeds a snapshot of it.
+message ServiceSpec {
+  ServiceSource source = 1;
+  string image = 2;  // resolved image reference (digest pinned once built)
+  ServiceMode mode = 3;
+  int32 replicas = 4;
+  Placement placement = 5;
+  bool reschedulable = 6;
+  HealthCheck health_check = 7;
+  repeated ServicePort ports = 8;
+  Resources resources = 9;  // per-replica limits (cpu_millis, memory_bytes)
+  repeated VolumeMount volumes = 10;
+  repeated string command = 11;
+  repeated string entrypoint = 12;
+  map<string, string> env = 13;
+  map<string, string> labels = 14;
+  DeployStrategy strategy = 15;
+  int32 max_surge = 16;
+  int32 stop_grace_seconds = 17;
+  BuildSpec build = 18;
+  string user = 19;
+  string working_dir = 20;
+  string restart_policy = 21;  // "always" (default) | "on-failure" | "no"
+  repeated string depends_on = 22;
+}
+
+message Service {
+  string id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+  string name = 4;
+  ServiceSpec spec = 5;
+  // Deployment currently serving traffic ("" before first deploy).
+  string active_deployment_id = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+enum DeploymentStatus {
+  DEPLOYMENT_STATUS_UNSPECIFIED = 0;
+  DEPLOYMENT_STATUS_QUEUED = 1;
+  DEPLOYMENT_STATUS_BUILDING = 2;
+  DEPLOYMENT_STATUS_DEPLOYING = 3;
+  DEPLOYMENT_STATUS_ACTIVE = 4;
+  DEPLOYMENT_STATUS_FAILED = 5;
+  DEPLOYMENT_STATUS_ROLLED_BACK = 6;
+  DEPLOYMENT_STATUS_SUPERSEDED = 7;
+}
+
+message Deployment {
+  string id = 1;
+  string service_id = 2;
+  ServiceSpec spec = 3;
+  string image_digest = 4;
+  DeploymentStatus status = 5;
+  string status_message = 6;
+  string commit_sha = 7;
+  string commit_message = 8;
+  string author = 9;
+  string build_id = 10;
+  // Deployment this one rolled back to / replaced (if any).
+  string previous_deployment_id = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp finished_at = 13;
+}
+
+enum ReplicaState {
+  REPLICA_STATE_UNSPECIFIED = 0;
+  REPLICA_STATE_PENDING = 1;   // assigned, container not yet created
+  REPLICA_STATE_STARTING = 2;  // container running, health not yet passing
+  REPLICA_STATE_RUNNING = 3;   // healthy
+  REPLICA_STATE_STOPPING = 4;
+  REPLICA_STATE_STOPPED = 5;
+  REPLICA_STATE_FAILED = 6;
+  REPLICA_STATE_STRANDED = 7;  // owner machine down and not reschedulable
+}
+
+message Replica {
+  string id = 1;
+  string service_id = 2;
+  string deployment_id = 3;
+  string machine_id = 4;
+  string container_id = 5;
+  string container_ip = 6;
+  ReplicaState state = 7;
+  string message = 8;
+  // Fencing token of the placement. A node must stop any container whose
+  // replica row was reassigned with a higher token.
+  int64 fence = 9;
+  // Desired lifecycle: true => should be running.
+  bool desired_running = 10;
+  int32 restart_count = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+message Domain {
+  string id = 1;
+  string service_id = 2;
+  string hostname = 3;
+  int32 port = 4;
+  // "pending" | "active" | "error"
+  string tls_state = 5;
+  bool generated = 6;  // true for sslip.io / localhost defaults
+  google.protobuf.Timestamp tls_expires_at = 7;
+}
+
+// ----------------------------------------------------------- builds / events
+
+message Build {
+  string id = 1;
+  string service_id = 2;
+  string commit_sha = 3;
+  string ref = 4;
+  string provider = 5;  // dockerfile | compose | railpack | image
+  string status = 6;    // queued|running|succeeded|failed
+  string builder_machine_id = 7;
+  string image = 8;
+  string log_pointer = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp finished_at = 11;
+}
+
+// Event is a cluster activity record, also delivered on the live stream.
+message Event {
+  string id = 1;
+  string type = 2;  // e.g. "machine.state", "deployment.status", "replica.state"
+  string subject_id = 3;
+  string message = 4;
+  map<string, string> attributes = 5;
+  google.protobuf.Timestamp time = 6;
+}
+
+// ------------------------------------------------------------------- users
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_VIEWER = 1;
+  ROLE_DEVELOPER = 2;
+  ROLE_ADMIN = 3;
+  ROLE_OWNER = 4;
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+  Role role = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message ApiToken {
+  string id = 1;
+  string name = 2;
+  // Subset of "read", "deploy", "admin".
+  repeated string scopes = 3;
+  string user_id = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  google.protobuf.Timestamp last_used_at = 7;
+}

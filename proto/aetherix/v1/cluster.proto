@@ -1,0 +1,151 @@
+// ClusterService: cluster-wide status, bootstrap and the live event stream.
+syntax = "proto3";
+
+package aetherix.v1;
+
+import "aetherix/v1/types.proto";
+import "google/protobuf/timestamp.proto";
+
+service ClusterService {
+  // GetCluster returns cluster metadata from the local replica.
+  rpc GetCluster(GetClusterRequest) returns (GetClusterResponse);
+  // GetStatus returns a health summary (machines up, replicas running ...).
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  // UpdateCluster sets mutable cluster settings (name, default domain).
+  rpc UpdateCluster(UpdateClusterRequest) returns (UpdateClusterResponse);
+  // WatchEvents streams events from the replicated store (fed by store
+  // subscriptions). Set replay to receive recent history first.
+  rpc WatchEvents(WatchEventsRequest) returns (stream Event);
+  // ListEvents returns recent events, newest first.
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
+  // Backup returns a snapshot of the full replicated state (`ax cluster backup`).
+  // Version 2 embeds cluster identity secrets (CA + cluster key) for disaster recovery.
+  rpc Backup(BackupRequest) returns (stream BackupChunk);
+  // Restore applies a previously downloaded snapshot into the store.
+  // Intended for a freshly initialised single-node cluster; set force to
+  // override (destroys current cluster state). Peer machines and replicas are
+  // cleared — rejoin machines and restore volumes from S3 afterwards.
+  rpc Restore(stream RestoreChunk) returns (RestoreResponse);
+
+  // CheckUpdates resolves the latest release for the configured channel.
+  rpc CheckUpdates(CheckUpdatesRequest) returns (CheckUpdatesResponse);
+  // GetUpgrade returns desired version + per-machine upgrade progress.
+  rpc GetUpgrade(GetUpgradeRequest) returns (GetUpgradeResponse);
+  // StartUpgrade sets the cluster desired version; each targeted node
+  // self-upgrades when it observes the change.
+  rpc StartUpgrade(StartUpgradeRequest) returns (StartUpgradeResponse);
+  // CancelUpgrade clears the desired version (nodes already mid-upgrade finish).
+  rpc CancelUpgrade(CancelUpgradeRequest) returns (CancelUpgradeResponse);
+}
+
+message GetClusterRequest {}
+message GetClusterResponse {
+  Cluster cluster = 1;
+}
+
+message GetStatusRequest {}
+message GetStatusResponse {
+  Cluster cluster = 1;
+  int32 machines_total = 2;
+  int32 machines_up = 3;
+  int32 machines_suspect = 4;
+  int32 machines_down = 5;
+  int32 services_total = 6;
+  int32 replicas_running = 7;
+  int32 replicas_desired = 8;
+  // ID of the machine that answered.
+  string served_by = 9;
+  string version = 10;
+}
+
+message UpdateClusterRequest {
+  optional string name = 1;
+  optional string domain = 2;
+}
+message UpdateClusterResponse {
+  Cluster cluster = 1;
+}
+
+message WatchEventsRequest {
+  // Only events whose type has this prefix ("" = all).
+  string type_prefix = 1;
+  // Number of past events to replay first.
+  int32 replay = 2;
+}
+
+message ListEventsRequest {
+  string type_prefix = 1;
+  int32 limit = 2;
+}
+message ListEventsResponse {
+  repeated Event events = 1;
+}
+
+message BackupRequest {}
+message BackupChunk {
+  bytes data = 1;
+}
+
+// RestoreChunk is one piece of a .snapshot file. Set force on the first
+// message only; later messages ignore it.
+message RestoreChunk {
+  bytes data = 1;
+  bool force = 2;
+}
+message RestoreResponse {
+  int32 tables = 1;
+  int32 rows = 2;
+  int32 machines_removed = 3;
+  int32 replicas_cleared = 4;
+}
+
+message CheckUpdatesRequest {
+  // stable | latest (default latest). Ignored when version is set.
+  string channel = 1;
+}
+message CheckUpdatesResponse {
+  string current_version = 1;  // version of the answering node
+  string latest_version = 2;
+  string channel = 3;
+  string release_url = 4;
+  bool update_available = 5;
+  // Notes / body excerpt from the release (may be empty).
+  string release_notes = 6;
+}
+
+message GetUpgradeRequest {}
+message MachineUpgrade {
+  string machine_id = 1;
+  string machine_name = 2;
+  string agent_version = 3;
+  string arch = 4;
+  string upgrade_status = 5;
+  string upgrade_message = 6;
+  bool on_target = 7; // agent_version matches desired (normalized)
+}
+message GetUpgradeResponse {
+  string channel = 1;
+  string desired_version = 2;
+  string download_base = 3;
+  repeated string machine_ids = 4; // empty = all machines
+  google.protobuf.Timestamp started_at = 5;
+  repeated MachineUpgrade machines = 6;
+  int32 on_target = 7;
+  int32 total = 8;
+}
+message StartUpgradeRequest {
+  // Target release tag (e.g. "v0.4.0"). Required.
+  string version = 1;
+  string channel = 2;
+  // Empty = every machine. Otherwise only these machine IDs.
+  repeated string machine_ids = 3;
+  // Optional release mirror (overrides GitHub).
+  string download_base = 4;
+}
+message StartUpgradeResponse {
+  GetUpgradeResponse status = 1;
+}
+message CancelUpgradeRequest {}
+message CancelUpgradeResponse {
+  GetUpgradeResponse status = 1;
+}
