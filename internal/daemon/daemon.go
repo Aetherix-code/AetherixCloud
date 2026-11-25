@@ -453,8 +453,16 @@ func heartbeat(ctx context.Context, st store.Store, self, version, arch string) 
 	for {
 		cap, used := capacity(), usage()
 		if m, err := store.GetMachine(ctx, st, self); err == nil {
+			// Preserve upgrade_* from a concurrent watcher write: re-read those
+			// fields immediately before put so a stale Get doesn't wipe status
+			// (which previously helped drive a downloading ↔ pending_restart loop).
+			upgradeStatus, upgradeMessage := m.UpgradeStatus, m.UpgradeMessage
 			m.Capacity, m.Used, m.LastSeen = cap, used, timestamppb.Now()
 			m.AgentVersion, m.Arch = version, arch
+			if latest, err2 := store.GetMachine(ctx, st, self); err2 == nil {
+				upgradeStatus, upgradeMessage = latest.UpgradeStatus, latest.UpgradeMessage
+			}
+			m.UpgradeStatus, m.UpgradeMessage = upgradeStatus, upgradeMessage
 			_ = store.PutMachine(ctx, st, m)
 		}
 		select {

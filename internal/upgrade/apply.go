@@ -69,7 +69,11 @@ func Apply(ctx context.Context, opt ApplyOptions) error {
 	log.Info("downloading release", "url", url)
 	tgz := filepath.Join(work, "release.tgz")
 	if err := downloadFile(ctx, opt.HTTPClient, url, tgz); err != nil {
-		alt := "aetherixcloud_" + version + "_linux_" + opt.Arch + ".tar.gz"
+		// Some builds embed the leading "v" in the archive filename.
+		alt := "aetherixcloud_" + Normalize(version) + "_linux_" + opt.Arch + ".tar.gz"
+		if alt == archive {
+			return fmt.Errorf("download: %w", err)
+		}
 		url = assetURL(opt.DownloadBase, repoOrDefault(opt.Repo), version, alt)
 		log.Info("retrying download", "url", url)
 		if err2 := downloadFile(ctx, opt.HTTPClient, url, tgz); err2 != nil {

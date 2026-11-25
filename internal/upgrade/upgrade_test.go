@@ -76,7 +76,7 @@ func TestWatcherAppliesDesired(t *testing.T) {
 	require.NoError(t, store.PutMachine(ctx, st, &v1.Machine{Id: "m1", Name: "n1", AgentVersion: "v0.1.0"}))
 	require.NoError(t, PutConfig(ctx, st, Config{DesiredVersion: "v0.2.0"}))
 
-	applied := make(chan ApplyOptions, 1)
+	applied := make(chan ApplyOptions, 8)
 	w := &Watcher{
 		Store: st, Self: "m1", Version: "v0.1.0", Arch: "amd64",
 		interval: 10 * time.Millisecond,
@@ -99,6 +99,10 @@ func TestWatcherAppliesDesired(t *testing.T) {
 		m, err := store.GetMachine(ctx, st, "m1")
 		return err == nil && m.UpgradeStatus == "pending_restart"
 	}, 2*time.Second, 20*time.Millisecond)
+
+	// Must not re-enter Apply while waiting for restart (loop regression).
+	time.Sleep(80 * time.Millisecond)
+	require.Empty(t, applied)
 }
 
 func buildReleaseTar(t *testing.T, dir string) []byte {

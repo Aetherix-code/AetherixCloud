@@ -21,9 +21,10 @@ type Watcher struct {
 	Logger  *slog.Logger
 	Apply   func(ctx context.Context, opt ApplyOptions) error // override in tests
 
-	mu       sync.Mutex
-	running  bool
-	interval time.Duration
+	mu         sync.Mutex
+	running    bool
+	pendingFor string // desired version already installed; waiting for process restart
+	interval   time.Duration
 }
 
 func (w *Watcher) log() *slog.Logger {
@@ -59,11 +60,22 @@ func (w *Watcher) tick(ctx context.Context) {
 		return
 	}
 	if !cfg.Targets(w.Self) {
+		w.mu.Lock()
+		w.pendingFor = ""
+		w.mu.Unlock()
 		w.clearStatusIfIdle(ctx)
 		return
 	}
 	if Equal(w.Version, cfg.DesiredVersion) {
+		w.mu.Lock()
+		w.pendingFor = ""
+		w.mu.Unlock()
 		w.clearStatusOnTarget(ctx)
+		return
+	}
+	// Binaries already installed for this target (AX_DEV / manual restart): do not
+	// re-download every poll — that caused a pending_restart ↔ downloading loop.
+	if w.waitingForRestart(ctx, cfg.DesiredVersion) {
 		return
 	}
 	w.mu.Lock()
@@ -82,6 +94,39 @@ func (w *Watcher) tick(ctx context.Context) {
 		}()
 		w.applyOnce(ctx, cfg)
 	}()
+}
+
+// waitingForRestart is true when this node has finished installing DesiredVersion
+// and is waiting for aetherixd to come back on the new binary.
+func (w *Watcher) waitingForRestart(ctx context.Context, desired string) bool {
+	w.mu.Lock()
+	pending := w.pendingFor
+	w.mu.Unlock()
+	if pending != "" && Equal(pending, desired) {
+		_ = w.setStatus(ctx, "pending_restart", "binaries installed — restart this node to finish")
+		return true
+	}
+	m, err := store.GetMachine(ctx, w.Store, w.Self)
+	if err != nil {
+		return false
+	}
+	switch m.UpgradeStatus {
+	case "restarting":
+		return true
+	case "pending_restart":
+		// Adopt store state after process-local pendingFor was lost (or peer view).
+		w.mu.Lock()
+		if w.pendingFor == "" || Equal(w.pendingFor, desired) {
+			w.pendingFor = Normalize(desired)
+			w.mu.Unlock()
+			return true
+		}
+		w.mu.Unlock()
+		// Desired version changed since the pending install — re-apply.
+		return false
+	default:
+		return false
+	}
 }
 
 func (w *Watcher) applyOnce(ctx context.Context, cfg Config) {
@@ -104,12 +149,19 @@ func (w *Watcher) applyOnce(ctx context.Context, cfg Config) {
 		},
 	})
 	if err == nil {
+		// Restart was scheduled (systemd / exit). Keep "restarting" until Version matches.
 		return
 	}
 	if errors.Is(err, ErrPendingRestart) {
+		w.mu.Lock()
+		w.pendingFor = Normalize(cfg.DesiredVersion)
+		w.mu.Unlock()
 		_ = w.setStatus(ctx, "pending_restart", "binaries installed — restart this node to finish")
 		return
 	}
+	w.mu.Lock()
+	w.pendingFor = ""
+	w.mu.Unlock()
 	log.Error("upgrade failed", "err", err)
 	_ = w.setStatus(ctx, "failed", err.Error())
 }
