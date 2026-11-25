@@ -50,13 +50,13 @@ builds:
       - arm64
 
 archives:
-  - id: default
-    formats:
-      - tar.gz
-    builds:
+  # Linux: aetherixd + ax (matches deploy/install.sh asset names).
+  - id: linux
+    ids:
       - aetherixd
       - ax
-    # Matches deploy/install.sh: aetherixcloud_<ver>_linux_<arch>.tar.gz
+    formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     wrap_in_directory: false
     files:
@@ -65,6 +65,16 @@ archives:
       - deploy/docker-daemon.json
       - README.md
       - docs/**/*
+  # Darwin: ax CLI only (daemon is Linux).
+  - id: darwin
+    ids:
+      - ax
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: false
+    files:
+      - README.md
 
 checksum:
   name_template: checksums.txt
