@@ -203,7 +203,7 @@ export function createMockTransport(): Transport {
         currentVersion: 'mock',
         latestVersion: 'v0.4.0',
         channel: r.channel || upgradeState.channel,
-        releaseUrl: 'https://github.com/aetherix/aetherixcloud/releases/tag/v0.4.0',
+        releaseUrl: 'https://github.com/Aetherix-code/AetherixCloud/releases/tag/v0.1.0',
         updateAvailable: true,
         releaseNotes: 'Mock release notes for the Updates page.',
       }),

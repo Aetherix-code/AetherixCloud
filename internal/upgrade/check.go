@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const defaultRepo = "aetherix/aetherixcloud"
+const defaultRepo = "Aetherix-code/AetherixCloud"
 
 // Release is a resolved GitHub release.
 type Release struct {

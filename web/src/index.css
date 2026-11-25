@@ -19,9 +19,9 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-ring: var(--ring);
-  --radius-lg: 0.75rem;
-  --radius-md: 0.55rem;
-  --radius-sm: 0.4rem;
+  --radius-lg: 0.9rem;
+  --radius-md: 0.65rem;
+  --radius-sm: 0.45rem;
   --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --shadow-soft: var(--shadow-soft);
@@ -101,9 +101,10 @@ code, kbd, pre, .font-mono { font-family: var(--font-mono); letter-spacing: 0; }
 
 .ax-shell {
   background:
-    linear-gradient(180deg, color-mix(in oklab, var(--card) 88%, transparent), var(--card));
+    linear-gradient(180deg, color-mix(in oklab, var(--card) 82%, transparent), color-mix(in oklab, var(--card) 94%, transparent));
   border-color: color-mix(in oklab, var(--border) 85%, transparent);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
   box-shadow: inset -1px 0 0 color-mix(in oklab, var(--border) 55%, transparent);
 }
 

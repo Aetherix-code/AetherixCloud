@@ -521,10 +521,10 @@ export function UpdatesSettings() {
                   <option value="stable">stable</option>
                 </Select>
               </Field>
-              <Field label="Target version" hint="e.g. v0.4.0">
-                <Input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="v0.0.0" />
+              <Field label="Target version" hint="e.g. v0.1.0">
+                <Input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="v0.1.0" />
               </Field>
-              <Field label="Download mirror" hint="Optional; leave blank for GitHub Releases.">
+              <Field label="Download mirror" hint="Optional; leave blank for GitHub Releases (Aetherix-code/AetherixCloud).">
                 <Input value={mirror} onChange={(e) => setMirror(e.target.value)} placeholder="https://…" />
               </Field>
             </div>

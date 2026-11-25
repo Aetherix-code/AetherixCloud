@@ -28,7 +28,7 @@
 #   --help
 #
 # Environment overrides:
-#   AETHERIX_REPO            GitHub owner/repo (default: aetherix/aetherixcloud)
+#   AETHERIX_REPO            GitHub owner/repo (default: Aetherix-code/AetherixCloud)
 #   AETHERIX_VERSION         same as --version
 #   AETHERIX_DOWNLOAD_BASE   base URL for release assets (overrides GitHub)
 #   CORROSION_VERSION        Corrosion tag (default: v1.0.0)
@@ -39,7 +39,7 @@
 
 set -eu
 
-REPO="${AETHERIX_REPO:-aetherix/aetherixcloud}"
+REPO="${AETHERIX_REPO:-Aetherix-code/AetherixCloud}"
 VERSION="${AETHERIX_VERSION:-latest}"
 CHANNEL="latest"
 CORROSION_VERSION="${CORROSION_VERSION:-v1.0.0}"

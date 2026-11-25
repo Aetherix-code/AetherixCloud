@@ -1,6 +1,6 @@
 [Unit]
 Description=AetherixCloud node daemon (aetherixd)
-Documentation=https://github.com/aetherix/aetherixcloud
+Documentation=https://github.com/Aetherix-code/AetherixCloud
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service

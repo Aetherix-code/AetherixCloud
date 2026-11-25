@@ -14,7 +14,7 @@ type Config struct {
 	Channel        string    `json:"channel,omitempty"`         // stable | latest
 	DesiredVersion string    `json:"desired_version,omitempty"` // e.g. v0.4.0; empty = no pending target
 	DownloadBase   string    `json:"download_base,omitempty"`
-	Repo           string    `json:"repo,omitempty"` // owner/name; default aetherix/aetherixcloud
+	Repo           string    `json:"repo,omitempty"` // owner/name; default Aetherix-code/AetherixCloud
 	MachineIDs     []string  `json:"machine_ids,omitempty"` // empty = all
 	StartedAt      time.Time `json:"started_at,omitempty"`
 	StartedBy      string    `json:"started_by,omitempty"`

@@ -78,6 +78,9 @@ changelog:
       - "^chore:"
 
 release:
+  github:
+    owner: Aetherix-code
+    name: AetherixCloud
   draft: false
   prerelease: auto
   extra_files:
