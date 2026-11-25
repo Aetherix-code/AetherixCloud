@@ -42,7 +42,7 @@ export function UsersSettings() {
   const del = useAction((id: string) => api.auth.deleteUser({ userId: id }), { invalidate: [keys.users], success: 'User removed' })
   return (
     <Page>
-      <PageHeader title="Users & roles" description="Invite teammates and assign Owner, Admin, Developer or Viewer. Role changes are recorded in the Audit log and apply to the dashboard, API tokens and AI agents." actions={q.data ? <Button onClick={() => setOpen(true)}><UserPlus />Add user</Button> : undefined} />
+      <PageHeader title="Users & roles" hideTitle description="Invite teammates and assign Owner, Admin, Developer or Viewer. Role changes are recorded in the Audit log and apply to the dashboard, API tokens and AI agents." actions={q.data ? <Button onClick={() => setOpen(true)}><UserPlus />Add user</Button> : undefined} />
       {q.isLoading ? <ListSkeleton /> : q.error ? <QueryError error={q.error} what="users" /> : q.data === null ? <NotAvailable what="User management" /> : (
         <Card className="divide-y">
           {q.data!.map((u) => (
@@ -107,7 +107,7 @@ export function GithubSettings() {
 
   return (
     <Page>
-      <PageHeader title="GitHub App" description="Deploy on push, commit statuses and PR previews through a GitHub App created with the manifest flow." />
+      <PageHeader title="GitHub App" hideTitle description="Deploy on push, commit statuses and PR previews through a GitHub App created with the manifest flow." />
       {app.isLoading ? <ListSkeleton rows={2} /> : app.error ? <QueryError error={app.error} what="the GitHub App" /> : app.data === null ? (
         <NotAvailable what="The GitHub integration" />
       ) : app.data?.configured ? (
@@ -188,7 +188,7 @@ export function AgentsSettings() {
   const claudeCfg = JSON.stringify({ mcpServers: { aetherix: { command: 'ax', args: ['mcp'] } } }, null, 2)
   return (
     <Page>
-      <PageHeader title="AI agents" description="Let ChatGPT, Claude or Cursor operate the cluster over MCP, with your RBAC role and scoped tokens." />
+      <PageHeader title="AI agents" hideTitle description="Let ChatGPT, Claude or Cursor operate the cluster over MCP, with your RBAC role and scoped tokens." />
       <div className="space-y-4">
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><Bot className="size-4" />Connector URL</CardTitle><CardDescription>Add as a custom connector in ChatGPT or Claude and sign in with your AetherixCloud account (OAuth 2.1). Served by every node.</CardDescription></CardHeader>
@@ -328,7 +328,7 @@ export function BackupsSettings() {
 
   return (
     <Page>
-      <PageHeader title="Backups" description="Export a cluster snapshot or configure S3 volume backups. Restores are privileged mutations and appear in the Audit log." />
+      <PageHeader title="Backups" hideTitle description="Export a cluster snapshot or configure S3 volume backups. Restores are privileged mutations and appear in the Audit log." />
       <div className="space-y-4">
         <Card>
           <CardHeader>
@@ -502,6 +502,7 @@ export function UpdatesSettings() {
     <Page>
       <PageHeader
         title="Updates"
+        hideTitle
         description="Nodes report their aetherixd version on heartbeat. Set a target release and each machine upgrades itself."
       />
       <div className="space-y-4">
@@ -602,7 +603,7 @@ export function GeneralSettings() {
   const save = useAction(() => api.cluster.updateCluster({ name, domain }), { invalidate: [keys.status], success: 'Cluster updated' })
   return (
     <Page>
-      <PageHeader title="General" description="Cluster identity used in the sidebar, default hostnames and GitHub webhook URLs." />
+      <PageHeader title="General" hideTitle description="Cluster identity used in the sidebar, default hostnames and GitHub webhook URLs." />
       {st.isLoading ? <ListSkeleton rows={2} /> : st.error ? <QueryError error={st.error} what="cluster" /> : (
         <Card>
           <CardHeader>

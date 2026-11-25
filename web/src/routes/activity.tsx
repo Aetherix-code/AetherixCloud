@@ -29,6 +29,7 @@ export function ActivityPage() {
     <Page>
       <PageHeader
         title="Activity"
+        hideTitle
         description="Operational cluster events — deployments, builds, machine state and replica changes. Updated live. Privileged mutations belong in the Audit log."
         actions={
           <div className="flex flex-wrap items-center gap-2">

@@ -2,7 +2,6 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import {
   Activity,
   ArrowUpCircle,
-  Boxes,
   Cloud,
   FolderKanban,
   LayoutDashboard,
@@ -28,9 +27,9 @@ function Metric({ label, value, hint, tone }: { label: string; value: string; hi
   const color =
     tone === 'ok' ? 'text-success' : tone === 'warn' ? 'text-warning' : tone === 'bad' ? 'text-destructive' : 'text-foreground'
   return (
-    <div className="ax-row min-w-0 rounded-lg border bg-card/80 px-3.5 py-3">
+    <div className="ax-soft ax-row px-4 py-3.5">
       <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{label}</div>
-      <div className={cn('mt-1 text-2xl font-semibold tracking-tight tabular-nums', color)}>{value}</div>
+      <div className={cn('mt-1.5 text-2xl font-semibold tracking-tight tabular-nums', color)}>{value}</div>
       {hint && <div className="mt-1 truncate text-xs text-muted-foreground">{hint}</div>}
     </div>
   )
@@ -77,11 +76,11 @@ export function DashboardPage() {
     <Page wide>
       <PageHeader
         title="Dashboard"
-        description={s?.cluster ? `${s.cluster.name} · ${s.cluster.network}${s.servedBy ? ` · via ${s.servedBy}` : ''}` : 'Cluster overview'}
+        hideTitle
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => setOpen(true)}><Plus />New project</Button>
-            <Button asChild variant="outline"><Link to="/cluster/add"><Server className="size-4" />Add machine</Link></Button>
+          <div className="flex flex-wrap gap-2 sm:hidden">
+            <Button size="sm" variant="secondary" onClick={() => setOpen(true)}><Plus />New project</Button>
+            <Button size="sm" variant="outline" asChild><Link to="/cluster/add"><Server className="size-3.5" />Add machine</Link></Button>
           </div>
         }
       />
@@ -91,11 +90,11 @@ export function DashboardPage() {
       ) : status.error ? (
         <QueryError error={status.error} what="cluster status" />
       ) : (
-        <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metric
             label="Machines"
             value={`${s?.machinesUp ?? 0}/${s?.machinesTotal ?? 0}`}
-            hint={s?.machinesDown ? `${s.machinesDown} down` : 'all reporting'}
+            hint={s?.machinesDown ? `${s.machinesDown} down` : (s?.machinesSuspect ? `${s.machinesSuspect} suspect` : 'all reporting')}
             tone={(s?.machinesDown ?? 0) > 0 ? 'bad' : (s?.machinesSuspect ?? 0) > 0 ? 'warn' : 'ok'}
           />
           <Metric
@@ -119,31 +118,32 @@ export function DashboardPage() {
         </div>
       )}
 
-      <div className="mb-6 flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" asChild><Link to="/projects"><FolderKanban className="size-3.5" />Projects</Link></Button>
-        <Button
-          size="sm"
-          variant="outline"
+      <div className="mb-5 flex flex-wrap gap-2">
+        <Link to="/projects" className="ax-pill"><FolderKanban className="size-3.5 text-primary" />Projects</Link>
+        <button
+          type="button"
+          className="ax-pill cursor-pointer"
           onClick={() => {
             if (!firstProject) { setOpen(true); return }
             void nav({ to: '/projects/$projectId', params: { projectId: firstProject.id }, search: { new: 'github' } })
           }}
         >
-          <Rocket className="size-3.5" />New service
-        </Button>
-        <Button size="sm" variant="outline" asChild><Link to="/settings/updates"><ArrowUpCircle className="size-3.5" />Updates{skew ? <Badge tone="warning">skew</Badge> : null}</Link></Button>
-        <Button size="sm" variant="outline" asChild><Link to="/settings/backups"><Cloud className="size-3.5" />Backups</Link></Button>
-        <Button size="sm" variant="outline" asChild><Link to="/activity"><Activity className="size-3.5" />Activity</Link></Button>
+          <Rocket className="size-3.5 text-primary" />New service
+        </button>
+        <Link to="/settings/updates" className="ax-pill">
+          <ArrowUpCircle className="size-3.5 text-primary" />Updates
+          {skew ? <Badge tone="warning">skew</Badge> : null}
+        </Link>
+        <Link to="/settings/backups" className="ax-pill"><Cloud className="size-3.5 text-primary" />Backups</Link>
+        <Link to="/activity" className="ax-pill"><Activity className="size-3.5 text-primary" />Activity</Link>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <section className="space-y-4">
+      <div className="grid gap-3.5 lg:grid-cols-[1.4fr_1fr]">
+        <section className="space-y-3.5">
           <Card>
-            <CardHeader className="flex-row items-center justify-between gap-2">
-              <div>
-                <CardTitle className="flex items-center gap-2"><FolderKanban className="size-4 opacity-80" />Projects</CardTitle>
-              </div>
-              <Button size="sm" variant="ghost" asChild><Link to="/projects">View all</Link></Button>
+            <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+              <CardTitle>Projects</CardTitle>
+              <Link to="/projects" className="text-sm text-muted-foreground hover:text-foreground">View all</Link>
             </CardHeader>
             <CardContent className="p-0">
               {projects.isLoading || services.isLoading ? (
@@ -155,25 +155,25 @@ export function DashboardPage() {
                   <div className="mt-3"><Button size="sm" onClick={() => setOpen(true)}><Plus />Create a project</Button></div>
                 </Empty>
               ) : (
-                <ul className="divide-y">
+                <ul className="divide-y divide-border/60">
                   {projects.data.slice(0, 6).map((p) => (
                     <li key={p.id}>
                       <Link
                         to="/projects/$projectId"
                         params={{ projectId: p.id }}
                         search={{}}
-                        className="ax-row flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted/50"
+                        className="ax-row flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted/40"
                       >
-                        <div className="grid size-8 place-items-center rounded-md bg-primary/10 text-primary">
-                          <Boxes className="size-4" />
+                        <div className="grid size-9 place-items-center rounded-[10px] bg-muted text-sm font-semibold text-primary">
+                          {p.name.slice(0, 1).toUpperCase()}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium tracking-tight">{p.name}</div>
+                          <div className="truncate font-semibold tracking-tight">{p.name}</div>
                           <div className="truncate text-xs text-muted-foreground">{p.description || 'No description'}</div>
                         </div>
-                        <div className="text-right text-xs text-muted-foreground">
-                          <div className="font-medium text-foreground tabular-nums">{serviceByProject.get(p.id) ?? 0} services</div>
-                          <div>created {timeAgo(p.createdAt)}</div>
+                        <div className="text-right text-xs">
+                          <div className="font-medium tabular-nums">{serviceByProject.get(p.id) ?? 0} svc</div>
+                          <div className="text-muted-foreground">created {timeAgo(p.createdAt)}</div>
                         </div>
                       </Link>
                     </li>
@@ -184,33 +184,33 @@ export function DashboardPage() {
           </Card>
 
           <Card>
-            <CardHeader className="flex-row items-center justify-between gap-2">
-              <CardTitle className="flex items-center gap-2"><Server className="size-4 opacity-80" />Machines</CardTitle>
-              <Button size="sm" variant="ghost" asChild><Link to="/cluster">Cluster</Link></Button>
+            <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+              <CardTitle>Machines</CardTitle>
+              <Link to="/cluster" className="text-sm text-muted-foreground hover:text-foreground">Cluster</Link>
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="p-3">
               {machines.isLoading ? (
-                <div className="p-4"><ListSkeleton rows={2} /></div>
+                <ListSkeleton rows={2} />
               ) : machines.error ? (
-                <div className="p-4"><QueryError error={machines.error} what="machines" /></div>
+                <QueryError error={machines.error} what="machines" />
               ) : !machines.data?.length ? (
                 <Empty title="No machines">
                   <div className="mt-3"><Button size="sm" asChild><Link to="/cluster/add"><Plus />Add machine</Link></Button></div>
                 </Empty>
               ) : (
-                <div className="flex gap-2 overflow-x-auto p-3">
+                <div className="flex gap-2.5 overflow-x-auto">
                   {machines.data.map((m) => (
                     <Link
                       key={m.id}
                       to="/cluster/machines/$machineId"
                       params={{ machineId: m.id }}
                       className={cn(
-                        'ax-row min-w-[11.5rem] shrink-0 rounded-md border px-3 py-2.5 transition-colors hover:border-primary/40',
+                        'ax-soft ax-row min-w-[10.5rem] shrink-0 px-3.5 py-3 transition-colors hover:border-primary/35',
                         m.state === MachineState.DOWN && 'border-destructive/35',
                       )}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">{m.name}</span>
+                        <span className="truncate text-[13px] font-semibold">{m.name}</span>
                         <MachineBadge state={m.state} />
                       </div>
                       <div className="mt-1.5 font-mono text-[11px] text-muted-foreground">
@@ -228,9 +228,9 @@ export function DashboardPage() {
 
         <section>
           <Card className="h-full">
-            <CardHeader className="flex-row items-center justify-between gap-2">
-              <CardTitle className="flex items-center gap-2"><Activity className="size-4 opacity-80" />Recent activity</CardTitle>
-              <Button size="sm" variant="ghost" asChild><Link to="/activity">Open feed</Link></Button>
+            <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+              <CardTitle>Recent activity</CardTitle>
+              <Link to="/activity" className="text-sm text-muted-foreground hover:text-foreground">Open feed</Link>
             </CardHeader>
             <CardContent className="p-0">
               {events.isLoading ? (
@@ -240,9 +240,9 @@ export function DashboardPage() {
               ) : !recent.length ? (
                 <Empty title="Quiet so far">Deployments, machine state and replica changes will show up here.</Empty>
               ) : (
-                <ul className="divide-y">
+                <ul className="divide-y divide-border/60">
                   {recent.map((e) => (
-                    <li key={e.id} className="ax-row flex gap-3 px-4 py-2.5 text-sm">
+                    <li key={e.id} className="ax-row flex gap-3 px-4 py-3 text-sm">
                       <div className="min-w-0 flex-1">
                         <div className="leading-snug">{e.message}</div>
                         <code className="text-[11px] text-muted-foreground">{e.type}</code>

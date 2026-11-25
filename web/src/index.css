@@ -19,9 +19,9 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-ring: var(--ring);
-  --radius-lg: 0.9rem;
-  --radius-md: 0.65rem;
-  --radius-sm: 0.45rem;
+  --radius-lg: 1.1rem;
+  --radius-md: 0.75rem;
+  --radius-sm: 0.5rem;
   --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --shadow-soft: var(--shadow-soft);
@@ -108,8 +108,55 @@ code, kbd, pre, .font-mono { font-family: var(--font-mono); letter-spacing: 0; }
   box-shadow: inset -1px 0 0 color-mix(in oklab, var(--border) 55%, transparent);
 }
 
+/* Continuous sidebar glass — closer to the iPadOS mock */
+.ax-sidebar {
+  background: color-mix(in oklab, var(--muted) 55%, var(--card));
+  border-right: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+}
+
+.ax-topbar {
+  background: color-mix(in oklab, var(--card) 78%, transparent);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+
 .ax-panel {
   box-shadow: var(--shadow-soft);
+}
+
+.ax-glass {
+  background: color-mix(in oklab, var(--card) 88%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+  border-radius: 1.35rem;
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.ax-soft {
+  background: color-mix(in oklab, var(--muted) 70%, var(--card));
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  border-radius: 1rem;
+}
+
+.ax-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+  background: color-mix(in oklab, var(--muted) 65%, var(--card));
+  padding: 0.625rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.ax-pill:hover {
+  background: color-mix(in oklab, var(--muted) 90%, var(--card));
+  border-color: color-mix(in oklab, var(--primary) 28%, var(--border));
 }
 
 @keyframes ax-pulse { 0%,100% { opacity: 1 } 50% { opacity: .4 } }

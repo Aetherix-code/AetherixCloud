@@ -41,7 +41,7 @@ export function AddMachinePage() {
   return (
     <Page>
       <Link to="/cluster" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Cluster</Link>
-      <PageHeader title="Add a machine" description="Any Linux server with Docker access. It joins over WireGuard and syncs the cluster state." />
+      <PageHeader title="Add a machine" hideTitle description="Any Linux server with Docker access. It joins over WireGuard and syncs the cluster state." />
       <ol className="mb-6 flex items-center gap-2 text-xs" aria-label="Steps">
         {['Configure', 'Run command', 'Connected'].map((s, i) => (
           <li key={s} className="flex items-center gap-2">

@@ -42,6 +42,7 @@ export function AuditSettings() {
     <Page wide>
       <PageHeader
         title="Audit log"
+        hideTitle
         description="Security and compliance trail for privileged mutations — user and role changes, machine join/remove, upgrades, restores, deletes, OAuth grants and agent tools. Operational deploy noise lives in Activity."
         actions={
           <Link to="/activity" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">

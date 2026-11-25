@@ -46,6 +46,7 @@ export function ProjectsPage() {
     <Page wide>
       <PageHeader
         title="Projects"
+        hideTitle
         description="Group services and environments. Open a project to manage the service graph, deploys and variables."
         actions={<Button onClick={() => setOpen(true)}><Plus />New project</Button>}
       />

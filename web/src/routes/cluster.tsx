@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Empty, ListSkeleton, QueryError } from '@/components/ui/states'
 import { MachineRole, MachineState, ReplicaState, type Machine } from '@/gen/aetherix/v1/types_pb'
 import { api } from '@/lib/api'
-import { keys, useAction, useMachines, useStatus } from '@/lib/queries'
+import { keys, useAction, useMachines } from '@/lib/queries'
 import { MachineBadge, ReplicaBadge, roleLabel } from '@/lib/status'
 import { cn, formatBytes, formatCpu, pct, timeAgo } from '@/lib/utils'
 
@@ -63,14 +63,13 @@ function MachineCard({ m }: { m: Machine }) {
 
 export function ClusterPage() {
   const q = useMachines()
-  const st = useStatus()
   const versions = [...new Set((q.data ?? []).map((m) => m.agentVersion?.replace(/^v/, '') || '').filter(Boolean))]
   const skew = versions.length > 1
   return (
     <Page wide>
       <PageHeader
         title="Cluster"
-        description={st.data ? `${st.data.machinesUp}/${st.data.machinesTotal} machines up · ${st.data.replicasRunning}/${st.data.replicasDesired} replicas running · ${st.data.cluster?.network}` : undefined}
+        hideTitle
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline"><Link to="/settings/updates"><Cpu className="size-4" />Updates{skew ? <Badge tone="warning">skew</Badge> : null}</Link></Button>
