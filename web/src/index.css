@@ -22,8 +22,9 @@
   --radius-lg: 1.1rem;
   --radius-md: 0.75rem;
   --radius-sm: 0.5rem;
-  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Match the iPadOS mock: SF Pro / system UI stack */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --shadow-soft: var(--shadow-soft);
 }
 
@@ -72,9 +73,8 @@ body {
   background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans);
-  font-feature-settings: 'ss01' on, 'cv11' on;
   -webkit-font-smoothing: antialiased;
-  letter-spacing: -0.011em;
+  letter-spacing: -0.015em;
 }
 * { border-color: var(--border); }
 code, kbd, pre, .font-mono { font-family: var(--font-mono); letter-spacing: 0; }
