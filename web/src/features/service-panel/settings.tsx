@@ -27,9 +27,10 @@ function Section({ title, description, children, icon }: { title: string; descri
 /** Partial spec update using proto field names in the update mask. */
 function useSpecUpdate(service: Service) {
   return useAction(
-    (a: { spec: Partial<ServiceSpec> | Record<string, unknown>; mask: string[]; redeploy?: boolean }) =>
+    (a: { spec: Partial<ServiceSpec> | Record<string, unknown>; mask: string[]; redeploy?: boolean; rebuild?: boolean }) =>
       api.services.updateService({ serviceId: service.id, spec: a.spec as never, updateMask: a.mask }).then(async (r) => {
-        if (a.redeploy) await api.deploy.deploy({ serviceId: service.id, redeploy: true })
+        if (a.rebuild) await api.deploy.deploy({ serviceId: service.id })
+        else if (a.redeploy) await api.deploy.deploy({ serviceId: service.id, redeploy: true })
         return r
       }),
     { invalidate: [keys.service(service.id), ['project'], keys.deployments(service.id)], success: 'Settings saved' },
@@ -81,11 +82,11 @@ function SourceSection({ service }: { service: Service }) {
             disabled={save.isPending || branch === (src.github.branch || 'main')}
             onClick={() => save.mutate({
               mask: ['source'],
-              redeploy: true,
+              rebuild: true,
               spec: { source: { ...src, github: { ...src.github!, branch } } },
             })}
           >
-            Save branch & redeploy
+            Save branch & rebuild
           </Button>
         </div>
       </Section>
@@ -188,7 +189,7 @@ function BuildSection({ service }: { service: Service }) {
         <Input value={f.watch} onChange={set('watch')} placeholder="apps/web/**, packages/ui/**" className="font-mono text-xs" />
       </Field>
       <div className="flex justify-end gap-2">
-        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate({ mask: ['build'], redeploy: true, spec: { build: { ...b, builder: f.builder, context: f.context.replace(/^\/+|\/+$/g, ''), dockerfile: f.dockerfile, buildCommand: f.buildCommand, startCommand: f.startCommand, platform: f.platform, watchPaths: f.watch.split(',').map((x) => x.trim()).filter(Boolean), imageRetain: b?.imageRetain ?? 0, imageS3TargetId: b?.imageS3TargetId ?? '' } } })}>Save & rebuild</Button>
+        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate({ mask: ['build'], rebuild: true, spec: { build: { ...b, builder: f.builder, context: f.context.replace(/^\/+|\/+$/g, ''), dockerfile: f.dockerfile, buildCommand: f.buildCommand, startCommand: f.startCommand, platform: f.platform, watchPaths: f.watch.split(',').map((x) => x.trim()).filter(Boolean), imageRetain: b?.imageRetain ?? 0, imageS3TargetId: b?.imageS3TargetId ?? '' } } })}>Save & rebuild</Button>
       </div>
     </Section>
   )

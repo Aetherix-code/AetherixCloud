@@ -44,7 +44,7 @@ type StartOptions struct {
 }
 
 // ErrNoImage is returned when a service has no image to run yet.
-var ErrNoImage = errors.New("service has no image: build pipeline unavailable, set spec.image")
+var ErrNoImage = errors.New("service has no image: set spec.image or trigger a GitHub build")
 
 // Start creates a deployment of svc and activates it.
 func Start(ctx context.Context, st store.Store, svc *v1.Service, o StartOptions) (*v1.Deployment, error) {
@@ -53,6 +53,9 @@ func Start(ctx context.Context, st store.Store, svc *v1.Service, o StartOptions)
 		spec = o.SpecOverride
 	}
 	if spec == nil || spec.Image == "" {
+		if spec != nil && spec.GetSource().GetGithub() != nil {
+			return nil, errors.New("service has no image yet: trigger a build (Simulate push or push to the tracked branch)")
+		}
 		return nil, ErrNoImage
 	}
 	spec = proto.Clone(spec).(*v1.ServiceSpec)

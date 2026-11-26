@@ -89,6 +89,9 @@ type Deps struct {
 	State      *cluster.NodeState
 	Reconciler *reconciler.Reconciler
 	Logger     *slog.Logger
+	// BuildTrigger is shared with the API so the github hook can register
+	// enqueue-on-deploy for GitHub-sourced services.
+	BuildTrigger *api.BuildTrigger
 }
 
 // Daemon is a running node.
@@ -295,11 +298,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	// ---- API
-	deps := api.Deps{Store: st, Leases: leases, State: state, Runtime: rt, Members: mem, Version: cfg.Version, Logger: log}
+	buildTrigger := &api.BuildTrigger{}
+	deps := api.Deps{Store: st, Leases: leases, State: state, Runtime: rt, Members: mem, Version: cfg.Version, Logger: log, BuildTrigger: buildTrigger}
 	if rec != nil {
 		deps.OnChange = rec.Trigger
 	}
-	hdeps := &Deps{Store: st, Leases: leases, Runtime: rt, Members: mem, State: state, Reconciler: rec, Logger: log}
+	hdeps := &Deps{Store: st, Leases: leases, Runtime: rt, Members: mem, State: state, Reconciler: rec, Logger: log, BuildTrigger: buildTrigger}
 	for _, svc := range d.Hooks.Services {
 		spawn("hook-service", func(ctx context.Context) error { return svc(ctx, hdeps) })
 	}

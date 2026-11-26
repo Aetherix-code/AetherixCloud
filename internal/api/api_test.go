@@ -310,6 +310,49 @@ func TestStatusAndEvents(t *testing.T) {
 	_ = http.StatusOK
 }
 
+func TestGitHubCreateAndDeployEnqueueBuild(t *testing.T) {
+	ctx := context.Background()
+	st := store.NewMemory()
+	state, _, err := cluster.Init(cluster.InitOptions{ClusterName: "t", MachineName: "node-1", Advertise: []string{"127.0.0.1"}})
+	require.NoError(t, err)
+	require.NoError(t, state.ApplyBootstrap(ctx, st))
+
+	trig := &api.BuildTrigger{}
+	var enqueued []string
+	trig.Set(func(_ context.Context, serviceID, ref string) (string, error) {
+		enqueued = append(enqueued, serviceID+":"+ref)
+		return "bld_1", nil
+	})
+	deps := api.Deps{Store: st, Leases: &lease.Manager{Store: st, Self: state.MachineID, Now: time.Now}, State: state, BuildTrigger: trig}
+	mesh := httptest.NewServer(api.Handler(deps))
+	t.Cleanup(mesh.Close)
+
+	ps := aetherixv1connect.NewProjectServiceClient(mesh.Client(), mesh.URL)
+	ss := aetherixv1connect.NewServiceServiceClient(mesh.Client(), mesh.URL)
+	ds := aetherixv1connect.NewDeployServiceClient(mesh.Client(), mesh.URL)
+	_, err = ps.CreateProject(ctx, connect.NewRequest(&v1.CreateProjectRequest{Name: "app"}))
+	require.NoError(t, err)
+
+	cr, err := ss.CreateService(ctx, connect.NewRequest(&v1.CreateServiceRequest{
+		Project: "app", Name: "web", Deploy: true,
+		Spec: &v1.ServiceSpec{Source: &v1.ServiceSource{Github: &v1.GitHubSource{Repo: "o/r", Branch: "main"}}},
+	}))
+	require.NoError(t, err)
+	require.Nil(t, cr.Msg.Deployment)
+	require.Equal(t, []string{cr.Msg.Service.Id + ":"}, enqueued)
+
+	enqueued = nil
+	_, err = ds.Deploy(ctx, connect.NewRequest(&v1.DeployRequest{ServiceId: cr.Msg.Service.Id}))
+	require.NoError(t, err)
+	require.Equal(t, []string{cr.Msg.Service.Id + ":"}, enqueued)
+
+	// Redeploy with no image still builds.
+	enqueued = nil
+	_, err = ds.Deploy(ctx, connect.NewRequest(&v1.DeployRequest{ServiceId: cr.Msg.Service.Id, Redeploy: true}))
+	require.NoError(t, err)
+	require.Equal(t, []string{cr.Msg.Service.Id + ":"}, enqueued)
+}
+
 func TestUpdateMachineLastEssentialRole(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

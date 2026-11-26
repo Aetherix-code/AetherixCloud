@@ -40,13 +40,19 @@ export function DeploymentsTab({ service }: { service: Service }) {
     refetchInterval: 6000,
   })
   const inv = [keys.deployments(service.id), keys.service(service.id), ['replicas'], ['service']]
-  const redeploy = useAction(() => api.deploy.deploy({ serviceId: service.id, redeploy: true }), { invalidate: inv, success: 'Redeploy started' })
+  const hasGithub = !!service.spec?.source?.github
+  const hasImage = !!service.spec?.image
+  const redeploy = useAction(
+    () => (hasGithub && !hasImage
+      ? api.deploy.deploy({ serviceId: service.id })
+      : api.deploy.deploy({ serviceId: service.id, redeploy: true })),
+    { invalidate: inv, success: hasGithub && !hasImage ? 'Build queued' : 'Redeploy started' },
+  )
   const simulate = useAction(() => api.github.simulatePush({ serviceId: service.id, ref: '' }), { invalidate: inv, success: 'Push simulated; build queued' })
   const scale = useAction((replicas: number) => api.services.scaleService({ serviceId: service.id, replicas }), {
     invalidate: inv,
     success: 'Scaled',
   })
-  const hasGithub = !!service.spec?.source?.github
   const global = service.spec?.mode === 2
   const replicasWanted = service.spec?.replicas ?? 0
   const running = replicasWanted > 0
@@ -65,7 +71,7 @@ export function DeploymentsTab({ service }: { service: Service }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => redeploy.mutate(undefined)} disabled={redeploy.isPending || !running}><Rocket />Redeploy</Button>
+        <Button size="sm" onClick={() => redeploy.mutate(undefined)} disabled={redeploy.isPending || (!running && !(hasGithub && !hasImage))}><Rocket />{hasGithub && !hasImage ? 'Build & deploy' : 'Redeploy'}</Button>
         {!global && (
           <>
             <Button size="sm" variant="secondary" disabled={!running || scale.isPending} onClick={stop}><Power />Stop app</Button>

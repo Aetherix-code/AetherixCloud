@@ -145,46 +145,65 @@ func (s *Service) ListBranches(ctx context.Context, req *connect.Request[v1.List
 
 var shaRe = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
 
-// SimulatePush implements GitHubService: it resolves the latest commit of the
-// service's branch through the GitHub API and enqueues the same build that a
-// real push webhook would.
-func (s *Service) SimulatePush(ctx context.Context, req *connect.Request[v1.SimulatePushRequest]) (*connect.Response[v1.SimulatePushResponse], error) {
-	svc, err := store.GetService(ctx, s.M.Store, req.Msg.ServiceId)
+// EnqueuePushBuild resolves the latest commit for the service's GitHub source
+// and enqueues the same build a push webhook would. ref may be empty (branch).
+func (m *Module) EnqueuePushBuild(ctx context.Context, serviceID, ref string) (buildID, commitSHA string, err error) {
+	svc, err := store.GetService(ctx, m.Store, serviceID)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("service %q not found", req.Msg.ServiceId))
+		return "", "", fmt.Errorf("service %q not found", serviceID)
 	}
 	gh := svc.Spec.GetSource().GetGithub()
 	if gh == nil || gh.Repo == "" {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("service has no GitHub source"))
+		return "", "", errors.New("service has no GitHub source")
 	}
-	c, err := s.M.Client(ctx)
+	c, err := m.Client(ctx)
 	if err != nil {
-		return nil, rpcErr(err)
+		return "", "", err
 	}
-	inst, err := s.M.resolveInstallation(ctx, gh.InstallationId, gh.Repo)
+	inst, err := m.resolveInstallation(ctx, gh.InstallationId, gh.Repo)
 	if err != nil {
-		return nil, rpcErr(err)
+		return "", "", err
 	}
-	ref := firstNonEmpty(req.Msg.Ref, gh.Branch)
-	refName := ref
+	ref = firstNonEmpty(ref, gh.Branch)
 	if ref == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("service has no branch: pass ref"))
+		return "", "", errors.New("service has no branch: pass ref")
 	}
 	cm, err := c.GetCommit(ctx, inst, gh.Repo, ref)
 	if err != nil {
-		return nil, rpcErr(err)
+		return "", "", err
 	}
+	refName := ref
 	if !strings.HasPrefix(refName, "refs/") && !shaRe.MatchString(ref) {
 		refName = "refs/heads/" + ref
 	} else if shaRe.MatchString(ref) {
 		refName = "refs/heads/" + gh.Branch
 	}
-	b, _, err := build.Enqueue(ctx, s.M.Store, build.JobMeta{ServiceID: svc.Id, Kind: "github", Repo: gh.Repo,
+	b, _, err := build.Enqueue(ctx, m.Store, build.JobMeta{ServiceID: svc.Id, Kind: "github", Repo: gh.Repo,
 		InstallationID: inst, Ref: refName, SHA: cm.SHA, Message: cm.Message, Author: cm.Author})
 	if err != nil {
+		return "", "", err
+	}
+	return b.Id, cm.SHA, nil
+}
+
+// SimulatePush implements GitHubService: it resolves the latest commit of the
+// service's branch through the GitHub API and enqueues the same build that a
+// real push webhook would.
+func (s *Service) SimulatePush(ctx context.Context, req *connect.Request[v1.SimulatePushRequest]) (*connect.Response[v1.SimulatePushResponse], error) {
+	id, sha, err := s.M.EnqueuePushBuild(ctx, req.Msg.ServiceId, req.Msg.Ref)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		if strings.Contains(err.Error(), "no GitHub source") || strings.Contains(err.Error(), "no branch") {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		if strings.Contains(err.Error(), "pass ref") {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
 		return nil, rpcErr(err)
 	}
-	return connect.NewResponse(&v1.SimulatePushResponse{BuildId: b.Id, CommitSha: cm.SHA}), nil
+	return connect.NewResponse(&v1.SimulatePushResponse{BuildId: id, CommitSha: sha}), nil
 }
 
 // SetWebhookUrl implements GitHubService: it stores the URL and, when the App

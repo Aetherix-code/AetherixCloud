@@ -40,6 +40,24 @@ func (s *deploySvc) Deploy(ctx context.Context, req *connect.Request[v1.DeployRe
 	if req.Msg.SpecOverride != nil {
 		o.SpecOverride = NormalizeSpec(req.Msg.SpecOverride)
 	}
+	// Redeploy with an existing image reuses it. A fresh Deploy (or first
+	// deploy with no image) for a GitHub-sourced service goes through build.
+	overrideImg := ""
+	if o.SpecOverride != nil {
+		overrideImg = o.SpecOverride.Image
+	}
+	gh := svc.Spec.GetSource().GetGithub()
+	githubSrc := gh != nil && gh.Repo != ""
+	if overrideImg == "" && githubSrc && (svc.Spec.Image == "" || !req.Msg.Redeploy) {
+		ref := req.Msg.Ref
+		if ref == "" {
+			ref = req.Msg.CommitSha
+		}
+		if _, err := s.BuildTrigger.Enqueue(ctx, svc.Id, ref); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&v1.DeployResponse{}), nil
+	}
 	d, err := s.start(ctx, svc, o)
 	if err != nil {
 		return nil, err

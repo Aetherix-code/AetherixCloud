@@ -48,6 +48,9 @@ type Deps struct {
 	// PeerURL resolves a machine to its mesh HTTP base URL. Default:
 	// http://<mesh_ip>:8080.
 	PeerURL func(meshIP string) string
+	// BuildTrigger is filled by the github/build hook so Deploy/CreateService
+	// can enqueue a build for GitHub-sourced services that have no image yet.
+	BuildTrigger *BuildTrigger
 }
 
 type server struct {

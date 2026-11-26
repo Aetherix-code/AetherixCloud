@@ -71,6 +71,13 @@ func runGitHub(ctx context.Context, deps *daemon.Deps, routes *build.Lazy) error
 	worker := &build.Worker{Store: deps.Store, Leases: deps.Leases, Self: self, Pipeline: pipeline, Logs: logs,
 		Source: src, Reporter: &github.Reporter{Module: mod}, Key: key, Logger: deps.Logger, WorkDir: workDir}
 
+	if deps.BuildTrigger != nil {
+		deps.BuildTrigger.Set(func(ctx context.Context, serviceID, ref string) (string, error) {
+			id, _, err := mod.EnqueuePushBuild(ctx, serviceID, ref)
+			return id, err
+		})
+	}
+
 	// Accept session JWTs and API tokens (same as hooks_extras). The old
 	// auth.Verify-only path rejected dashboard JWTs → HTTP 401 on GetApp.
 	authn, err := auth.NewAuthenticator(deps.Store, deps.State.ClusterKey)

@@ -162,9 +162,10 @@ export function NewServiceDialog({ projectId, environment, kind, template, onClo
                   ...(t.id === 'redis' ? {} : { [t.id === 'minio' ? 'MINIO_ROOT_PASSWORD' : t.id === 'mysql' ? 'MYSQL_ROOT_PASSWORD' : 'POSTGRES_PASSWORD']: secretFor() }),
                 },
               }
+      // GitHub sources have no image yet: CreateService enqueues a build when deploy=true.
       return api.services.createService({ project: projectId, environment: environment ?? '', name, spec, deploy: true })
     },
-    { invalidate: [['project']], success: 'Service created', onSuccess: (r) => r.service && onCreated(r.service.id) },
+    { invalidate: [['project']], success: k === 'github' ? 'Service created; build queued' : 'Service created', onSuccess: (r) => r.service && onCreated(r.service.id) },
   )
 
   const stepIdx = STEPS.findIndex((s) => s.id === step)

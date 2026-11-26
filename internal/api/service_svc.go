@@ -71,13 +71,30 @@ func (s *serviceSvc) CreateService(ctx context.Context, req *connect.Request[v1.
 	}
 	resp := &v1.CreateServiceResponse{Service: svc}
 	if req.Msg.Deploy {
-		d, err := (&deploySvc{s.server}).start(ctx, svc, nil)
-		if err != nil {
-			return nil, err
+		if needsGitHubBuild(svc) {
+			if _, err := s.BuildTrigger.Enqueue(ctx, svc.Id, ""); err != nil {
+				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+			}
+			// Image (and first deployment) arrive when the build finishes.
+		} else {
+			d, err := (&deploySvc{s.server}).start(ctx, svc, nil)
+			if err != nil {
+				return nil, err
+			}
+			resp.Deployment = d
 		}
-		resp.Deployment = d
 	}
 	return connect.NewResponse(resp), nil
+}
+
+// needsGitHubBuild is true when the service is GitHub-sourced and has no image
+// yet — Deploy must enqueue a build instead of rolling out a container.
+func needsGitHubBuild(svc *v1.Service) bool {
+	if svc == nil || svc.Spec == nil {
+		return false
+	}
+	gh := svc.Spec.GetSource().GetGithub()
+	return gh != nil && gh.Repo != "" && svc.Spec.Image == ""
 }
 
 func (s *serviceSvc) GetService(ctx context.Context, req *connect.Request[v1.GetServiceRequest]) (*connect.Response[v1.GetServiceResponse], error) {
