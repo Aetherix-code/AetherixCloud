@@ -115,11 +115,15 @@ func (w *Worker) defaults() {
 // lowest machine ID). Machines with the builder role that are not DOWN are
 // eligible; if none exist every non-DOWN machine is (so a cluster without an
 // explicit builder still builds).
-func RankBuilders(machines []*v1.Machine, running map[string]int) []string {
+//
+// self, when non-empty, is always eligible even if membership briefly marked
+// it DOWN or draining — a live worker must still be able to drain its queue.
+func RankBuilders(machines []*v1.Machine, running map[string]int, self string) []string {
 	pick := func(requireRole bool) []*v1.Machine {
 		var out []*v1.Machine
 		for _, m := range machines {
-			if m.State == v1.MachineState_MACHINE_STATE_DOWN || m.Draining {
+			alive := m.Id == self || (m.State != v1.MachineState_MACHINE_STATE_DOWN && !m.Draining)
+			if !alive {
 				continue
 			}
 			if requireRole {
@@ -140,6 +144,14 @@ func RankBuilders(machines []*v1.Machine, running map[string]int) []string {
 	c := pick(true)
 	if len(c) == 0 {
 		c = pick(false)
+	}
+	seen := map[string]bool{}
+	for _, m := range c {
+		seen[m.Id] = true
+	}
+	// Self missing from the machines table entirely (unlikely) — still claim.
+	if self != "" && !seen[self] {
+		c = append(c, &v1.Machine{Id: self})
 	}
 	sort.Slice(c, func(i, j int) bool {
 		li, lj := running[c[i].Id], running[c[j].Id]
@@ -169,9 +181,14 @@ func (w *Worker) load(ctx context.Context) map[string]int {
 func (w *Worker) Rank(ctx context.Context) int {
 	ms, err := store.ListMachines(ctx, w.Store)
 	if err != nil {
+		w.Logger.Warn("build rank: list machines", "err", err)
+		// Still allow this node to build if the store blips — better than a stuck queue.
+		if w.Self != "" {
+			return 0
+		}
 		return -1
 	}
-	for i, id := range RankBuilders(ms, w.load(ctx)) {
+	for i, id := range RankBuilders(ms, w.load(ctx), w.Self) {
 		if id == w.Self {
 			return i
 		}
@@ -182,9 +199,14 @@ func (w *Worker) Rank(ctx context.Context) int {
 // Run processes the build queue until ctx is done.
 func (w *Worker) Run(ctx context.Context) error {
 	w.defaults()
-	ch, err := w.Store.Watch(ctx, store.TableBuilds)
-	if err != nil {
-		return err
+	w.Logger.Info("build worker started", "self", w.Self, "poll", w.Poll)
+	var ch <-chan store.Change
+	if c, err := w.Store.Watch(ctx, store.TableBuilds); err != nil {
+		// Poll-only: a failed Watch used to abort the whole hook, leaving
+		// builds queued forever while CreateService/Deploy could still enqueue.
+		w.Logger.Warn("build queue watch unavailable; polling only", "err", err)
+	} else {
+		ch = c
 	}
 	t := time.NewTicker(w.Poll)
 	defer t.Stop()
@@ -193,7 +215,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ch:
+		case <-ch: // nil channel never fires — poll-only mode is fine
 		case <-t.C:
 		}
 	}
@@ -229,6 +251,7 @@ func (w *Worker) scan(ctx context.Context) {
 func (w *Worker) tryClaim(ctx context.Context, id string) {
 	rank := w.Rank(ctx)
 	if rank < 0 {
+		w.Logger.Warn("build not claimed: no eligible builder rank", "build", id, "self", w.Self)
 		return
 	}
 	if rank > 0 {
@@ -244,6 +267,9 @@ func (w *Worker) tryClaim(ctx context.Context, id string) {
 	}
 	l, err := w.Leases.Acquire(ctx, "build:"+id, w.LeaseTTL)
 	if err != nil {
+		if !errors.Is(err, lease.ErrHeld) {
+			w.Logger.Warn("build lease acquire failed", "build", id, "err", err)
+		}
 		return
 	}
 	bctx, cancel := context.WithCancel(ctx)

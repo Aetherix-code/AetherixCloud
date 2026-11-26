@@ -227,7 +227,7 @@ func (s *Server) Join(ctx context.Context, req *v1.JoinMachineRequest, remoteIP 
 		}
 	}
 	if len(m.Roles) == 0 {
-		m.Roles = []v1.MachineRole{v1.MachineRole_MACHINE_ROLE_WORKER, v1.MachineRole_MACHINE_ROLE_INGRESS}
+		m.Roles = []v1.MachineRole{v1.MachineRole_MACHINE_ROLE_WORKER, v1.MachineRole_MACHINE_ROLE_INGRESS, v1.MachineRole_MACHINE_ROLE_BUILDER}
 	}
 	if err := store.PutMachine(ctx, s.Store, m); err != nil {
 		return nil, err

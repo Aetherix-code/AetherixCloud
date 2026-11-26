@@ -25,6 +25,8 @@ import (
 const (
 	UploadPath = "/api/builds/upload"
 	PlanPath   = "/api/builds/plan"
+	// ListPath lists recent builds for a service (dashboard).
+	ListPath = "/api/builds"
 	// ImagePath receives a `docker save` stream (ax build --local / ax image push).
 	ImagePath = "/api/builds/image"
 	// ImagesConfigPath is the cluster-wide S3 archive setting for build images.
@@ -62,12 +64,63 @@ func (a *API) Handlers() map[string]http.Handler {
 	logs := connect.NewServerStreamHandler(aetherixv1connect.LogServiceStreamBuildLogsProcedure, a.streamBuildLogs)
 	return map[string]http.Handler{
 		aetherixv1connect.LogServiceStreamBuildLogsProcedure: a.guard(logs),
-		UploadPath:       a.guard(http.HandlerFunc(a.handleUpload)),
-		PlanPath:         a.guard(http.HandlerFunc(a.handlePlan)),
-		ImagePath:        a.guard(http.HandlerFunc(a.handleImage)),
-		ImagesConfigPath:       a.guard(http.HandlerFunc(a.handleImagesConfig)),
-	ConcurrencyConfigPath:  a.guard(http.HandlerFunc(a.handleConcurrencyConfig)),
+		UploadPath:            a.guard(http.HandlerFunc(a.handleUpload)),
+		PlanPath:              a.guard(http.HandlerFunc(a.handlePlan)),
+		ListPath:              a.guard(http.HandlerFunc(a.handleListBuilds)),
+		ImagePath:             a.guard(http.HandlerFunc(a.handleImage)),
+		ImagesConfigPath:      a.guard(http.HandlerFunc(a.handleImagesConfig)),
+		ConcurrencyConfigPath: a.guard(http.HandlerFunc(a.handleConcurrencyConfig)),
 	}
+}
+
+// handleListBuilds returns recent builds for ?service=.
+func (a *API) handleListBuilds(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET only", http.StatusMethodNotAllowed)
+		return
+	}
+	sid := r.URL.Query().Get("service")
+	if sid == "" {
+		http.Error(w, "service is required", http.StatusBadRequest)
+		return
+	}
+	svc, err := a.resolveService(r.Context(), sid, r.URL.Query().Get("project"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	bs, err := store.ListProto[v1.Build](r.Context(), a.Store, store.TableBuilds, store.Query{
+		Where: map[string]string{"service_id": svc.Id}, OrderBy: "updated_at", Desc: true, Limit: 20,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	type row struct {
+		ID               string `json:"id"`
+		Status           string `json:"status"`
+		CommitSHA        string `json:"commit_sha,omitempty"`
+		Ref              string `json:"ref,omitempty"`
+		Provider         string `json:"provider,omitempty"`
+		Image            string `json:"image,omitempty"`
+		BuilderMachineID string `json:"builder_machine_id,omitempty"`
+		CreatedAt        string `json:"created_at,omitempty"`
+		FinishedAt       string `json:"finished_at,omitempty"`
+	}
+	out := make([]row, 0, len(bs))
+	for _, b := range bs {
+		r := row{ID: b.Id, Status: b.Status, CommitSHA: b.CommitSha, Ref: b.Ref, Provider: b.Provider,
+			Image: b.Image, BuilderMachineID: b.BuilderMachineId}
+		if b.CreatedAt != nil {
+			r.CreatedAt = b.CreatedAt.AsTime().UTC().Format(time.RFC3339)
+		}
+		if b.FinishedAt != nil {
+			r.FinishedAt = b.FinishedAt.AsTime().UTC().Format(time.RFC3339)
+		}
+		out = append(out, r)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"builds": out})
 }
 
 func (a *API) guard(h http.Handler) http.Handler {
@@ -217,7 +270,11 @@ func (a *API) forwardToBuilder(w http.ResponseWriter, r *http.Request) bool {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return true
 	}
-	order := RankBuilders(ms, a.Worker.load(r.Context()))
+	self := ""
+	if a.Worker != nil {
+		self = a.Worker.Self
+	}
+	order := RankBuilders(ms, a.Worker.load(r.Context()), self)
 	if len(order) == 0 {
 		http.Error(w, "no builder node available", http.StatusServiceUnavailable)
 		return true

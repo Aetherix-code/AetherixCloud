@@ -67,6 +67,28 @@ export async function fetchBuildPlan(serviceId: string): Promise<BuildPlanRespon
   return getJSON(`/api/builds/plan?service=${encodeURIComponent(serviceId)}`)
 }
 
+export type ServiceBuild = {
+  id: string
+  status: string
+  commit_sha?: string
+  ref?: string
+  provider?: string
+  image?: string
+  builder_machine_id?: string
+  created_at?: string
+  finished_at?: string
+}
+
+export async function fetchServiceBuilds(serviceId: string): Promise<ServiceBuild[]> {
+  if (isMock) return []
+  try {
+    const r = await getJSON<{ builds: ServiceBuild[] }>(`/api/builds?service=${encodeURIComponent(serviceId)}`)
+    return r.builds ?? []
+  } catch {
+    return []
+  }
+}
+
 export type S3Target = {
   id: string
   name: string

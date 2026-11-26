@@ -39,7 +39,7 @@ func TestSyncerWritesStateAndEvent(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, store.PutMachine(ctx, st, &v1.Machine{Id: "a", Name: "a"}))
 	require.NoError(t, store.PutMachine(ctx, st, &v1.Machine{Id: "b", Name: "b", State: v1.MachineState_MACHINE_STATE_UP}))
-	mem := &Membership{members: map[string]*Member{}}
+	mem := &Membership{cfg: Config{MachineID: "a"}, members: map[string]*Member{}}
 	mem.apply(nil, "a", "x", StateUp, time.Now())
 	// b unknown to the local view => down
 	s := &Syncer{Mem: mem, Store: st}
@@ -51,6 +51,18 @@ func TestSyncerWritesStateAndEvent(t *testing.T) {
 	require.Equal(t, v1.MachineState_MACHINE_STATE_DOWN, b.State)
 	evs, _ := store.ListProto[v1.Event](ctx, st, store.TableEvents, store.Query{})
 	require.Len(t, evs, 2)
+}
+
+func TestSyncerSkipsWhenSelfAbsent(t *testing.T) {
+	st := store.NewMemory()
+	ctx := context.Background()
+	require.NoError(t, store.PutMachine(ctx, st, &v1.Machine{Id: "a", Name: "a", State: v1.MachineState_MACHINE_STATE_UP}))
+	mem := &Membership{cfg: Config{MachineID: "a"}, members: map[string]*Member{}}
+	// empty view — must not flip a to DOWN
+	s := &Syncer{Mem: mem, Store: st}
+	require.NoError(t, s.SyncOnce(ctx))
+	a, _ := store.GetMachine(ctx, st, "a")
+	require.Equal(t, v1.MachineState_MACHINE_STATE_UP, a.State)
 }
 
 func TestTwoNodeGossip(t *testing.T) {

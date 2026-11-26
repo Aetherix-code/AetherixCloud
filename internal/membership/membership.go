@@ -330,6 +330,21 @@ func (s *Syncer) SyncOnce(ctx context.Context) error {
 	for _, m := range s.Mem.Snapshot() {
 		view[m.ID] = m
 	}
+	// If this node is missing from its own gossip view, the view is unusable
+	// (startup race / bind failure). Do not mass-mark the cluster DOWN — that
+	// previously left build queues stuck with RankBuilders skipping everyone.
+	selfID := ""
+	if s.Mem != nil {
+		selfID = s.Mem.cfg.MachineID
+	}
+	if selfID != "" {
+		if _, ok := view[selfID]; !ok {
+			if s.Logger != nil {
+				s.Logger.Warn("membership sync skipped: local node absent from gossip view")
+			}
+			return nil
+		}
+	}
 	for _, mc := range machines {
 		mem, ok := view[mc.Id]
 		st := v1.MachineState_MACHINE_STATE_DOWN
@@ -349,9 +364,13 @@ func (s *Syncer) SyncOnce(ctx context.Context) error {
 			return err
 		}
 		if old != st {
+			stateLabel := "down"
+			if ok {
+				stateLabel = mem.State.String()
+			}
 			_ = store.PutEvent(ctx, s.Store, &v1.Event{
 				Id: fmt.Sprintf("%020d-%s", time.Now().UnixNano(), mc.Id), Type: "machine.state", SubjectId: mc.Id,
-				Message:    fmt.Sprintf("machine %s is now %s", mc.Name, mem.State),
+				Message:    fmt.Sprintf("machine %s is now %s", mc.Name, stateLabel),
 				Attributes: map[string]string{"state": st.String()}, Time: timestamppb.Now(),
 			})
 		}

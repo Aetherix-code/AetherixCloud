@@ -8,6 +8,7 @@ import { Empty, ListSkeleton, QueryError } from '@/components/ui/states'
 import { LogView } from '@/components/xterm-view'
 import { DeploymentStatus, ReplicaState, type Deployment, type Service } from '@/gen/aetherix/v1/types_pb'
 import { api, isUnimplemented } from '@/lib/api'
+import { fetchServiceBuilds, type ServiceBuild } from '@/lib/extras'
 import { keys, useAction, useDeployments } from '@/lib/queries'
 import { DeployBadge, ReplicaBadge } from '@/lib/status'
 import { cn, formatBytes, formatCpu, shortId, timeAgo, tsDate } from '@/lib/utils'
@@ -39,9 +40,15 @@ export function DeploymentsTab({ service }: { service: Service }) {
     queryFn: async () => (await api.services.listReplicas({ serviceId: service.id })).replicas,
     refetchInterval: 6000,
   })
-  const inv = [keys.deployments(service.id), keys.service(service.id), ['replicas'], ['service']]
+  const inv = [keys.deployments(service.id), keys.service(service.id), ['replicas'], ['service'], ['builds', service.id]]
+  const buildsQ = useQuery({
+    queryKey: ['builds', service.id],
+    queryFn: () => fetchServiceBuilds(service.id),
+    refetchInterval: 4000,
+  })
   const hasGithub = !!service.spec?.source?.github
   const hasImage = !!service.spec?.image
+  const activeBuilds = (buildsQ.data ?? []).filter((b) => b.status === 'queued' || b.status === 'running' || b.status === 'failed').slice(0, 5)
   const redeploy = useAction(
     () => (hasGithub && !hasImage
       ? api.deploy.deploy({ serviceId: service.id })
@@ -86,8 +93,16 @@ export function DeploymentsTab({ service }: { service: Service }) {
         </p>
       )}
       {simulate.error && isUnimplemented(simulate.error) && <p className="text-xs text-muted-foreground">GitHub integration isn’t available on this node yet.</p>}
+      {!!activeBuilds.length && (
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">Builds</div>
+          <ul className="space-y-2">
+            {activeBuilds.map((b) => <BuildRow key={b.id} b={b} />)}
+          </ul>
+        </div>
+      )}
       {q.isLoading ? <ListSkeleton /> : q.error ? <QueryError error={q.error} what="deployments" /> : !q.data?.length ? (
-        <Card><Empty title="No deployments yet">Deploy this service to see its history here.</Empty></Card>
+        <Card><Empty title="No deployments yet">{hasGithub ? 'A build must finish before the first deployment appears.' : 'Deploy this service to see its history here.'}</Empty></Card>
       ) : (
         <ol className="relative space-y-3 before:absolute before:bottom-2 before:left-[11px] before:top-2 before:w-px before:bg-border" aria-label="Deployment timeline">
           {sortDeploymentsNewestFirst(q.data).map((d, i) => {
@@ -105,6 +120,23 @@ export function DeploymentsTab({ service }: { service: Service }) {
         </ol>
       )}
     </div>
+  )
+}
+
+function BuildRow({ b }: { b: ServiceBuild }) {
+  const tone = b.status === 'failed' ? 'text-destructive' : b.status === 'running' ? 'text-foreground' : 'text-muted-foreground'
+  return (
+    <Card className="px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Hammer className={cn('size-3.5', tone)} />
+        <Badge variant="outline" className={tone}>{b.status}</Badge>
+        <span className="font-mono text-xs text-muted-foreground">{shortId(b.id)}</span>
+        {b.commit_sha && <span className="font-mono text-xs">{b.commit_sha.slice(0, 7)}</span>}
+        {b.created_at && <span className="text-xs text-muted-foreground">{timeAgo(new Date(b.created_at))}</span>}
+      </div>
+      {b.status === 'failed' && <p className="mt-1 text-xs text-muted-foreground">Open Activity for details, or retry with Simulate push.</p>}
+      {b.status === 'queued' && <p className="mt-1 text-xs text-muted-foreground">Waiting for a builder node to pick this up…</p>}
+    </Card>
   )
 }
 

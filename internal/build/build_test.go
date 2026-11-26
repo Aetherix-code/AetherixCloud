@@ -344,11 +344,15 @@ func TestRankBuilders(t *testing.T) {
 		{Id: "m4", Roles: builder, State: v1.MachineState_MACHINE_STATE_DOWN},
 		{Id: "m5", Roles: worker},
 	}
-	require.Equal(t, []string{"m1", "m2", "m3"}, RankBuilders(ms, nil))
-	require.Equal(t, []string{"m3", "m1", "m2"}, RankBuilders(ms, map[string]int{"m1": 2, "m2": 2}))
+	require.Equal(t, []string{"m1", "m2", "m3"}, RankBuilders(ms, nil, ""))
+	require.Equal(t, []string{"m3", "m1", "m2"}, RankBuilders(ms, map[string]int{"m1": 2, "m2": 2}, ""))
 	// no builder role anywhere -> every live machine qualifies
 	ms2 := []*v1.Machine{{Id: "a", Roles: worker}, {Id: "b", Roles: worker, State: v1.MachineState_MACHINE_STATE_DOWN}}
-	require.Equal(t, []string{"a"}, RankBuilders(ms2, nil))
+	require.Equal(t, []string{"a"}, RankBuilders(ms2, nil, ""))
+	// self stays eligible even when membership marked it DOWN
+	down := []*v1.Machine{{Id: "solo", State: v1.MachineState_MACHINE_STATE_DOWN, Roles: builder}}
+	require.Equal(t, []string{"solo"}, RankBuilders(down, nil, "solo"))
+	require.Empty(t, RankBuilders(down, nil, ""))
 }
 
 // ---- worker end to end

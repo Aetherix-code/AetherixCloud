@@ -33,7 +33,7 @@ import (
 // AX_RAILPACK_FRONTEND, AX_DATA_DIR.
 func hookGitHub(d *daemon.Daemon) {
 	routes := &build.Lazy{}
-	paths := append(github.Paths(), build.UploadPath, build.PlanPath, build.ImagePath, build.ImagesConfigPath,
+	paths := append(github.Paths(), build.UploadPath, build.PlanPath, build.ListPath, build.ImagePath, build.ImagesConfigPath,
 		build.ConcurrencyConfigPath, aetherixv1connect.LogServiceStreamBuildLogsProcedure)
 	for _, p := range paths {
 		d.Hooks.Handlers[p] = routes
@@ -70,13 +70,6 @@ func runGitHub(ctx context.Context, deps *daemon.Deps, routes *build.Lazy) error
 	src := &github.GitSource{Module: mod, Runner: runner}
 	worker := &build.Worker{Store: deps.Store, Leases: deps.Leases, Self: self, Pipeline: pipeline, Logs: logs,
 		Source: src, Reporter: &github.Reporter{Module: mod}, Key: key, Logger: deps.Logger, WorkDir: workDir}
-
-	if deps.BuildTrigger != nil {
-		deps.BuildTrigger.Set(func(ctx context.Context, serviceID, ref string) (string, error) {
-			id, _, err := mod.EnqueuePushBuild(ctx, serviceID, ref)
-			return id, err
-		})
-	}
 
 	// Accept session JWTs and API tokens (same as hooks_extras). The old
 	// auth.Verify-only path rejected dashboard JWTs → HTTP 401 on GetApp.
@@ -135,6 +128,15 @@ func runGitHub(ctx context.Context, deps *daemon.Deps, routes *build.Lazy) error
 		all[p] = h
 	}
 	routes.Set(build.MuxOf(all))
+
+	// Register enqueue only once the worker is about to run, so Create/Deploy
+	// cannot queue builds against a hook that already exited on setup error.
+	if deps.BuildTrigger != nil {
+		deps.BuildTrigger.Set(func(ctx context.Context, serviceID, ref string) (string, error) {
+			id, _, err := mod.EnqueuePushBuild(ctx, serviceID, ref)
+			return id, err
+		})
+	}
 
 	go func() { // dedup rows older than a week
 		t := time.NewTicker(6 * time.Hour)
