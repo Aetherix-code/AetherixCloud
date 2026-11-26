@@ -62,10 +62,11 @@ type Config struct {
 type Reconciler struct {
 	cfg Config
 
-	mu          sync.Mutex
-	lastRestart map[string]time.Time
-	failCount   map[string]int
-	trigger     chan struct{}
+	mu             sync.Mutex
+	lastRestart    map[string]time.Time
+	failCount      map[string]int
+	unhealthySince map[string]time.Time
+	trigger        chan struct{}
 }
 
 // New returns a Reconciler.
@@ -90,7 +91,10 @@ func New(cfg Config) *Reconciler {
 			return spec.Env, nil
 		}
 	}
-	return &Reconciler{cfg: cfg, lastRestart: map[string]time.Time{}, failCount: map[string]int{}, trigger: make(chan struct{}, 1)}
+	return &Reconciler{
+		cfg: cfg, lastRestart: map[string]time.Time{}, failCount: map[string]int{},
+		unhealthySince: map[string]time.Time{}, trigger: make(chan struct{}, 1),
+	}
 }
 
 // Trigger requests an immediate reconcile.
@@ -293,11 +297,32 @@ func (r *Reconciler) observe(ctx context.Context, row *v1.Replica, c runtime.Con
 		if st == v1.ReplicaState_REPLICA_STATE_RUNNING {
 			r.mu.Lock()
 			delete(r.failCount, row.Id)
+			delete(r.unhealthySince, row.Id)
 			r.mu.Unlock()
 		}
 		msg := ""
 		if c.Health == "unhealthy" {
-			msg = "health check failing"
+			grace := healthFailGrace(spec)
+			r.mu.Lock()
+			since, ok := r.unhealthySince[row.Id]
+			if !ok {
+				since = r.cfg.Now()
+				r.unhealthySince[row.Id] = since
+			}
+			r.mu.Unlock()
+			elapsed := r.cfg.Now().Sub(since)
+			if elapsed >= grace {
+				st = v1.ReplicaState_REPLICA_STATE_FAILED
+				msg = fmt.Sprintf("health check failed for %s — giving up", grace.Round(time.Second))
+			} else {
+				left := (grace - elapsed).Round(time.Second)
+				if left < time.Second {
+					left = time.Second
+				}
+				msg = fmt.Sprintf("health check failing · will mark failed in %s", left)
+			}
+		} else if c.Health == "starting" {
+			msg = "waiting for health check"
 		}
 		r.setState(ctx, row, st, c.ID, c.IP, msg)
 		return nil
@@ -357,6 +382,36 @@ func stateFor(spec *v1.ServiceSpec, c runtime.Container) v1.ReplicaState {
 		}
 	}
 	return v1.ReplicaState_REPLICA_STATE_RUNNING
+}
+
+// healthFailGrace is how long a replica may stay Docker-unhealthy before we
+// mark it FAILED. Uses start_period + retries*interval (defaults match
+// healthSpec), with a floor of 30s and a ceiling of the rollout progress
+// deadline (5m) so operators see a clear countdown.
+func healthFailGrace(spec *v1.ServiceSpec) time.Duration {
+	interval := 5 * time.Second
+	retries := 3
+	startPeriod := time.Duration(0)
+	if spec != nil && spec.HealthCheck != nil {
+		hc := spec.HealthCheck
+		if hc.IntervalSeconds > 0 {
+			interval = time.Duration(hc.IntervalSeconds) * time.Second
+		}
+		if hc.Retries > 0 {
+			retries = int(hc.Retries)
+		}
+		if hc.StartPeriodSeconds > 0 {
+			startPeriod = time.Duration(hc.StartPeriodSeconds) * time.Second
+		}
+	}
+	g := startPeriod + time.Duration(retries)*interval*2 // allow a couple full probe cycles after start_period
+	if g < 30*time.Second {
+		g = 30 * time.Second
+	}
+	if g > 5*time.Minute {
+		g = 5 * time.Minute
+	}
+	return g
 }
 
 // setState writes the replica row only when something changed.

@@ -5,23 +5,27 @@ import { Page, PageHeader } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { toast } from '@/components/ui/toast'
-import { CheckboxField } from '@/components/ui/checkbox'
 import { Field, Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { MachineRole } from '@/gen/aetherix/v1/types_pb'
 import { api } from '@/lib/api'
 import { keys, useAction, useMachines } from '@/lib/queries'
-import { roleLabel } from '@/lib/status'
+import { suggestedJoinRoles } from '@/lib/roles'
+import { roleDescription, roleLabel } from '@/lib/status'
 import { copy } from '@/lib/utils'
+
+const roleOptions = [MachineRole.WORKER, MachineRole.INGRESS, MachineRole.BUILDER] as const
 
 /** Add-machine wizard: 1) name + roles, 2) run the join command, 3) wait for the node to appear. */
 export function AddMachinePage() {
   const [name, setName] = useState('')
-  const [roles, setRoles] = useState<MachineRole[]>([MachineRole.WORKER])
+  const [roles, setRoles] = useState<MachineRole[] | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const machines = useMachines()
   const baseline = useRef<Set<string>>(new Set())
+  const selected = roles ?? suggestedJoinRoles(machines.data)
 
-  const create = useAction(() => api.machines.createJoinToken({ ttlSeconds: 3600, roles, machineName: name }), {
+  const create = useAction(() => api.machines.createJoinToken({ ttlSeconds: 3600, roles: selected, machineName: name }), {
     invalidate: [keys.machines],
     onSuccess: () => {
       baseline.current = new Set((machines.data ?? []).map((m) => m.id))
@@ -55,22 +59,29 @@ export function AddMachinePage() {
         <Card><CardContent>
           <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); create.mutate(undefined) }}>
             <Field label="Machine name" hint="Optional. Defaults to the hostname."><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="node-4" pattern="[a-z0-9][a-z0-9-]*" /></Field>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <span className="text-xs font-medium text-muted-foreground">Roles</span>
-              <div className="flex gap-4">
-                {[MachineRole.WORKER, MachineRole.INGRESS, MachineRole.BUILDER].map((r) => (
-                  <CheckboxField
-                    key={r}
-                    checked={roles.includes(r)}
-                    onCheckedChange={(on) => setRoles(on ? [...roles, r] : roles.filter((x) => x !== r))}
-                  >
-                    {roleLabel[r]}
-                  </CheckboxField>
-                ))}
+              <div className="divide-y rounded-md border">
+                {roleOptions.map((r) => {
+                  const on = selected.includes(r)
+                  return (
+                    <div key={r} className="flex items-start justify-between gap-4 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium capitalize">{roleLabel[r]}</div>
+                        <p className="text-xs text-muted-foreground">{roleDescription[r]}</p>
+                      </div>
+                      <Switch
+                        checked={on}
+                        onCheckedChange={(v) => setRoles(v ? [...selected, r] : selected.filter((x) => x !== r))}
+                        aria-label={roleLabel[r]}
+                      />
+                    </div>
+                  )
+                })}
               </div>
             </div>
             <p className="text-xs text-muted-foreground">Installing over SSH from this dashboard isn’t available yet; use the one-line command on the new server.</p>
-            <Button type="submit" disabled={create.isPending || !roles.length}>Generate join command</Button>
+            <Button type="submit" disabled={create.isPending || !selected.length}>Generate join command</Button>
           </form>
         </CardContent></Card>
       )}

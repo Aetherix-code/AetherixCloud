@@ -62,6 +62,8 @@ const (
 	// MachineServiceReportHeartbeatProcedure is the fully-qualified name of the MachineService's
 	// ReportHeartbeat RPC.
 	MachineServiceReportHeartbeatProcedure = "/aetherix.v1.MachineService/ReportHeartbeat"
+	// MachineServiceHostExecProcedure is the fully-qualified name of the MachineService's HostExec RPC.
+	MachineServiceHostExecProcedure = "/aetherix.v1.MachineService/HostExec"
 )
 
 // MachineServiceClient is a client for the aetherix.v1.MachineService service.
@@ -82,6 +84,9 @@ type MachineServiceClient interface {
 	RemoveMachine(context.Context, *connect.Request[v1.RemoveMachineRequest]) (*connect.Response[v1.RemoveMachineResponse], error)
 	// ReportHeartbeat is sent over the mesh by every machine (capacity, usage).
 	ReportHeartbeat(context.Context, *connect.Request[v1.ReportHeartbeatRequest]) (*connect.Response[v1.ReportHeartbeatResponse], error)
+	// HostExec opens an interactive host shell (PTY) on a machine. Admin only.
+	// The browser uses /api/host-exec/ws; peers proxy this RPC over the mesh.
+	HostExec(context.Context) *connect.BidiStreamForClient[v1.HostExecRequest, v1.HostExecResponse]
 }
 
 // NewMachineServiceClient constructs a client for the aetherix.v1.MachineService service. By
@@ -149,6 +154,12 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(machineServiceMethods.ByName("ReportHeartbeat")),
 			connect.WithClientOptions(opts...),
 		),
+		hostExec: connect.NewClient[v1.HostExecRequest, v1.HostExecResponse](
+			httpClient,
+			baseURL+MachineServiceHostExecProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("HostExec")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -163,6 +174,7 @@ type machineServiceClient struct {
 	drainMachine    *connect.Client[v1.DrainMachineRequest, v1.DrainMachineResponse]
 	removeMachine   *connect.Client[v1.RemoveMachineRequest, v1.RemoveMachineResponse]
 	reportHeartbeat *connect.Client[v1.ReportHeartbeatRequest, v1.ReportHeartbeatResponse]
+	hostExec        *connect.Client[v1.HostExecRequest, v1.HostExecResponse]
 }
 
 // ListMachines calls aetherix.v1.MachineService.ListMachines.
@@ -210,6 +222,11 @@ func (c *machineServiceClient) ReportHeartbeat(ctx context.Context, req *connect
 	return c.reportHeartbeat.CallUnary(ctx, req)
 }
 
+// HostExec calls aetherix.v1.MachineService.HostExec.
+func (c *machineServiceClient) HostExec(ctx context.Context) *connect.BidiStreamForClient[v1.HostExecRequest, v1.HostExecResponse] {
+	return c.hostExec.CallBidiStream(ctx)
+}
+
 // MachineServiceHandler is an implementation of the aetherix.v1.MachineService service.
 type MachineServiceHandler interface {
 	ListMachines(context.Context, *connect.Request[v1.ListMachinesRequest]) (*connect.Response[v1.ListMachinesResponse], error)
@@ -228,6 +245,9 @@ type MachineServiceHandler interface {
 	RemoveMachine(context.Context, *connect.Request[v1.RemoveMachineRequest]) (*connect.Response[v1.RemoveMachineResponse], error)
 	// ReportHeartbeat is sent over the mesh by every machine (capacity, usage).
 	ReportHeartbeat(context.Context, *connect.Request[v1.ReportHeartbeatRequest]) (*connect.Response[v1.ReportHeartbeatResponse], error)
+	// HostExec opens an interactive host shell (PTY) on a machine. Admin only.
+	// The browser uses /api/host-exec/ws; peers proxy this RPC over the mesh.
+	HostExec(context.Context, *connect.BidiStream[v1.HostExecRequest, v1.HostExecResponse]) error
 }
 
 // NewMachineServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -291,6 +311,12 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithSchema(machineServiceMethods.ByName("ReportHeartbeat")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceHostExecHandler := connect.NewBidiStreamHandler(
+		MachineServiceHostExecProcedure,
+		svc.HostExec,
+		connect.WithSchema(machineServiceMethods.ByName("HostExec")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/aetherix.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineServiceListMachinesProcedure:
@@ -311,6 +337,8 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 			machineServiceRemoveMachineHandler.ServeHTTP(w, r)
 		case MachineServiceReportHeartbeatProcedure:
 			machineServiceReportHeartbeatHandler.ServeHTTP(w, r)
+		case MachineServiceHostExecProcedure:
+			machineServiceHostExecHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -354,4 +382,8 @@ func (UnimplementedMachineServiceHandler) RemoveMachine(context.Context, *connec
 
 func (UnimplementedMachineServiceHandler) ReportHeartbeat(context.Context, *connect.Request[v1.ReportHeartbeatRequest]) (*connect.Response[v1.ReportHeartbeatResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aetherix.v1.MachineService.ReportHeartbeat is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) HostExec(context.Context, *connect.BidiStream[v1.HostExecRequest, v1.HostExecResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("aetherix.v1.MachineService.HostExec is not implemented"))
 }

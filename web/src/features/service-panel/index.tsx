@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { Service } from '@/gen/aetherix/v1/types_pb'
 import { useService } from '@/lib/queries'
+import { currentReplicas } from '@/lib/replicas'
 import { ReplicaBadge } from '@/lib/status'
 import { DeploymentsTab } from './deployments'
 import { LogsTab } from './logs'
@@ -23,7 +24,7 @@ export function ServicePanel({ service, environmentId, services, tab, onTab, onC
 }) {
   const detail = useService(service.id)
   const live = detail.data?.service ?? service
-  const replicas = detail.data?.replicas ?? []
+  const replicas = currentReplicas(detail.data?.replicas ?? [])
   const domains = detail.data?.domains ?? []
   return (
     <aside className="flex w-full max-w-[640px] shrink-0 flex-col border-l bg-card md:w-[560px] lg:w-[640px]" aria-label={`${service.name} panel`}>
@@ -31,8 +32,13 @@ export function ServicePanel({ service, environmentId, services, tab, onTab, onC
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold">{live.name}</h2>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {replicas.map((r) => <ReplicaBadge key={r.id} state={r.state} />)}
+            {replicas.map((r) => <ReplicaBadge key={r.id} state={r.state} message={r.message} />)}
           </div>
+          {replicas.some((r) => /health check fail/i.test(r.message || '')) && (
+            <p className="mt-1.5 text-xs text-destructive">
+              {replicas.find((r) => /health check fail/i.test(r.message || ''))?.message}
+            </p>
+          )}
         </div>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close panel"><X /></Button>
       </div>

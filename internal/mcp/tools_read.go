@@ -16,7 +16,7 @@ import (
 type ref struct {
 	Service     string `json:"service" jsonschema:"service ID, or service name (then also give project)"`
 	Project     string `json:"project,omitempty" jsonschema:"project name or ID (needed when service is a name)"`
-	Environment string `json:"environment,omitempty" jsonschema:"environment name or ID; default production"`
+	Environment string `json:"environment,omitempty" jsonschema:"environment name or ID; default \"default\""`
 }
 
 func (c *call) service(ctx context.Context, r ref) (*v1.Service, error) {
@@ -40,7 +40,7 @@ func (c *call) environmentID(ctx context.Context, project, env string) (string, 
 		return "", err
 	}
 	if env == "" {
-		env = "production"
+		env = "default"
 	}
 	for _, e := range resp.Msg.Environments {
 		if e.Id == env || e.Name == env {
@@ -213,6 +213,18 @@ func (s *Server) registerReadTools() {
 			return map[string]any{"machines": listAny(r.Msg.Machines)}, nil
 		})
 
+	type getMachineIn struct {
+		Machine string `json:"machine" jsonschema:"machine name or ID"`
+	}
+	register(s, "get_machine", "Get one machine with roles, capacity and WireGuard details.", auth.LevelRead, ro("Get machine"),
+		func(ctx context.Context, c *call, in getMachineIn) (any, error) {
+			m, err := c.machine(ctx, in.Machine)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"machine": toAny(m)}, nil
+		})
+
 	register(s, "get_cluster_status", "Cluster health summary: machines up/down, services, replicas.", auth.LevelRead, ro("Cluster status"),
 		func(ctx context.Context, c *call, _ empty) (any, error) {
 			r, err := c.api.Cluster.GetStatus(ctx, connect.NewRequest(&v1.GetStatusRequest{}))
@@ -254,7 +266,7 @@ func (s *Server) registerReadTools() {
 
 	type listVarsIn struct {
 		Project     string `json:"project" jsonschema:"project name or ID"`
-		Environment string `json:"environment,omitempty" jsonschema:"default production"`
+		Environment string `json:"environment,omitempty" jsonschema:"default \"default\""`
 		Service     string `json:"service,omitempty" jsonschema:"service name or ID; empty = shared variables only, * = all"`
 	}
 	register(s, "list_variables", "List environment variables. Secret values are always redacted.", auth.LevelRead, ro("List variables"),
@@ -280,6 +292,71 @@ func (s *Server) registerReadTools() {
 				out = append(out, toAny(redactedVariable(v)))
 			}
 			return map[string]any{"environment_id": envID, "variables": out}, nil
+		})
+
+	register(s, "list_users", "List dashboard users and roles.", auth.LevelAdmin, ro("List users"),
+		func(ctx context.Context, c *call, _ empty) (any, error) {
+			r, err := c.api.Auth.ListUsers(ctx, connect.NewRequest(&v1.ListUsersRequest{}))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"users": listAny(r.Msg.Users)}, nil
+		})
+
+	register(s, "get_github_app", "GitHub App configuration status (no secrets).", auth.LevelRead, ro("GitHub App"),
+		func(ctx context.Context, c *call, _ empty) (any, error) {
+			r, err := c.api.GitHub.GetApp(ctx, connect.NewRequest(&v1.GetAppRequest{}))
+			if err != nil {
+				return nil, err
+			}
+			return toAny(r.Msg), nil
+		})
+
+	type listReposIn struct {
+		InstallationID int64  `json:"installation_id,omitempty"`
+		Query          string `json:"query,omitempty"`
+	}
+	register(s, "list_github_repositories", "List repositories visible to the GitHub App.", auth.LevelRead, ro("List GitHub repos"),
+		func(ctx context.Context, c *call, in listReposIn) (any, error) {
+			r, err := c.api.GitHub.ListRepositories(ctx, connect.NewRequest(&v1.ListRepositoriesRequest{
+				InstallationId: in.InstallationID, Query: in.Query}))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"repositories": listAny(r.Msg.Repositories)}, nil
+		})
+
+	register(s, "check_updates", "Check whether a newer AetherixCloud release is available.", auth.LevelAdmin, ro("Check updates"),
+		func(ctx context.Context, c *call, _ empty) (any, error) {
+			r, err := c.api.Cluster.CheckUpdates(ctx, connect.NewRequest(&v1.CheckUpdatesRequest{}))
+			if err != nil {
+				return nil, err
+			}
+			return toAny(r.Msg), nil
+		})
+
+	register(s, "get_upgrade", "Current upgrade desired version and per-machine progress.", auth.LevelAdmin, ro("Get upgrade"),
+		func(ctx context.Context, c *call, _ empty) (any, error) {
+			r, err := c.api.Cluster.GetUpgrade(ctx, connect.NewRequest(&v1.GetUpgradeRequest{}))
+			if err != nil {
+				return nil, err
+			}
+			return toAny(r.Msg), nil
+		})
+
+	type auditIn struct {
+		Limit        int    `json:"limit,omitempty" jsonschema:"default 50"`
+		ActionPrefix string `json:"action_prefix,omitempty"`
+		ActorUserID  string `json:"actor_user_id,omitempty"`
+	}
+	register(s, "list_audit_log", "Recent audit log entries (dashboard, API, MCP).", auth.LevelAdmin, ro("Audit log"),
+		func(ctx context.Context, c *call, in auditIn) (any, error) {
+			r, err := c.api.Auth.ListAuditLog(ctx, connect.NewRequest(&v1.ListAuditLogRequest{
+				Limit: int32(clamp(in.Limit, 50, 500)), ActionPrefix: in.ActionPrefix, ActorUserId: in.ActorUserID}))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"entries": listAny(r.Msg.Entries)}, nil
 		})
 }
 

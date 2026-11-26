@@ -1,19 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Cpu, Plus, Server, ShieldBan, Trash2, Waves } from 'lucide-react'
+import { ArrowLeft, Cpu, Layers, Plus, Server, ShieldBan, Terminal, Trash2, Waves } from 'lucide-react'
 import { Page, PageHeader } from '@/components/layout'
+import { HostExecTerminal } from '@/components/xterm-view'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog'
 import { CheckboxField } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
+import { Field, Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Empty, ListSkeleton, QueryError } from '@/components/ui/states'
 import { MachineRole, MachineState, ReplicaState, type Machine } from '@/gen/aetherix/v1/types_pb'
-import { api } from '@/lib/api'
+import { api, isMock } from '@/lib/api'
+import { fetchBuildConcurrency, saveBuildConcurrency, type BuildConcurrencyConfig } from '@/lib/extras'
 import { keys, useAction, useMachines } from '@/lib/queries'
-import { MachineBadge, ReplicaBadge, roleLabel } from '@/lib/status'
+import { isLastRoleHolder } from '@/lib/roles'
+import { MachineBadge, ReplicaBadge, roleDescription, roleLabel } from '@/lib/status'
 import { cn, formatBytes, formatCpu, pct, timeAgo } from '@/lib/utils'
 
 const machineRoute = getRouteApi('/app/cluster/machines/$machineId')
@@ -63,6 +67,12 @@ function MachineCard({ m }: { m: Machine }) {
 
 export function ClusterPage() {
   const q = useMachines()
+  const concQ = useQuery({ queryKey: ['build-concurrency'], queryFn: fetchBuildConcurrency, retry: false, enabled: !isMock })
+  const [conc, setConc] = useState<BuildConcurrencyConfig>({ max_parallel: 2 })
+  useEffect(() => {
+    if (concQ.data) setConc({ ...concQ.data })
+  }, [concQ.data])
+  const saveConc = useAction(() => saveBuildConcurrency(conc), { invalidate: [['build-concurrency']], success: 'Build concurrency saved' })
   const versions = [...new Set((q.data ?? []).map((m) => m.agentVersion?.replace(/^v/, '') || '').filter(Boolean))]
   const skew = versions.length > 1
   return (
@@ -96,6 +106,31 @@ export function ClusterPage() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Machine map">{q.data.map((m) => <MachineCard key={m.id} m={m} />)}</div>
       )}
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Layers className="size-4" />Build concurrency</CardTitle>
+          <CardDescription>
+            How many builds each builder node may run at once. Extra builds stay queued until a slot frees — nothing is dropped.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {concQ.isError ? <p className="text-sm text-muted-foreground">Build concurrency settings unavailable on this node.</p> : (
+            <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); saveConc.mutate(undefined) }}>
+              <Field label="Max parallel builds per builder" hint="Default 2. Applies on the next queue scan (a few seconds).">
+                <Input
+                  type="number"
+                  min={1}
+                  max={64}
+                  className="w-28"
+                  value={conc.max_parallel}
+                  onChange={(e) => setConc({ max_parallel: Math.min(64, Math.max(1, Number(e.target.value) || 1)) })}
+                />
+              </Field>
+              <Button type="submit" size="sm" disabled={saveConc.isPending}>Save</Button>
+            </form>
+          )}
+        </CardContent>
+      </Card>
     </Page>
   )
 }
@@ -104,6 +139,7 @@ export function MachinePage() {
   const { machineId } = machineRoute.useParams()
   const nav = useNavigate()
   const q = useQuery({ queryKey: ['machine', machineId], queryFn: async () => (await api.machines.getMachine({ machine: machineId })).machine, refetchInterval: 8000 })
+  const allMachines = useMachines()
   const reps = useQuery({ queryKey: ['replicas', 'machine', machineId], queryFn: async () => (await api.services.listReplicas({ machineId })).replicas })
   const svcs = useQuery({ queryKey: ['services', 'all'], queryFn: async () => (await api.services.listServices({})).services })
   const inv = [['machine', machineId], keys.machines, ['replicas']]
@@ -122,7 +158,11 @@ export function MachinePage() {
   if (q.isLoading) return <Page><ListSkeleton /></Page>
   if (q.error || !q.data) return <Page><QueryError error={q.error} what="machine" /></Page>
   const m = q.data
-  const toggleRole = (r: MachineRole) => setRoles.mutate(m.roles.includes(r) ? m.roles.filter((x) => x !== r) : [...m.roles, r])
+  const machines = allMachines.data ?? [m]
+  const toggleRole = (r: MachineRole) => {
+    if (m.roles.includes(r) && isLastRoleHolder(machines, m.id, r)) return
+    setRoles.mutate(m.roles.includes(r) ? m.roles.filter((x) => x !== r) : [...m.roles, r])
+  }
   const svcName = (id: string) => svcs.data?.find((s) => s.id === id)?.name ?? id
 
   return (
@@ -152,17 +192,27 @@ export function MachinePage() {
         <Card>
           <CardHeader><CardTitle>Roles</CardTitle></CardHeader>
           <CardContent className="space-y-2">
-            {[MachineRole.INGRESS, MachineRole.BUILDER, MachineRole.WORKER].map((r) => (
-              <CheckboxField
-                key={r}
-                checked={m.roles.includes(r)}
-                disabled={setRoles.isPending}
-                onCheckedChange={() => toggleRole(r)}
-              >
-                <span className="font-medium">{roleLabel[r]}</span>{' '}
-                <span className="text-xs text-muted-foreground">{r === MachineRole.INGRESS ? 'runs Caddy, receives public traffic' : r === MachineRole.BUILDER ? 'may claim build leases' : 'runs service replicas'}</span>
-              </CheckboxField>
-            ))}
+            <div className="divide-y rounded-md border">
+              {[MachineRole.WORKER, MachineRole.INGRESS, MachineRole.BUILDER].map((r) => {
+                const on = m.roles.includes(r)
+                const last = on && isLastRoleHolder(machines, m.id, r)
+                return (
+                  <div key={r} className="flex items-start justify-between gap-4 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium capitalize">{roleLabel[r]}</div>
+                      <p className="text-xs text-muted-foreground">{roleDescription[r]}</p>
+                      {last ? <p className="mt-1 text-xs text-muted-foreground">Last {roleLabel[r]} in the cluster — keep at least one.</p> : null}
+                    </div>
+                    <Switch
+                      checked={on}
+                      disabled={setRoles.isPending || last}
+                      onCheckedChange={() => toggleRole(r)}
+                      aria-label={roleLabel[r]}
+                    />
+                  </div>
+                )
+              })}
+            </div>
             <form className="flex gap-2 pt-2" onSubmit={(e) => { e.preventDefault(); rename.mutate(name); setName('') }}>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Rename machine…" aria-label="New name" />
               <Button type="submit" size="sm" variant="secondary" className="h-9" disabled={!name}>Rename</Button>
@@ -192,6 +242,17 @@ export function MachinePage() {
           </CardContent>
         </Card>
       </div>
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Terminal className="size-4" />Host shell</CardTitle>
+          <CardDescription>
+            Interactive login shell on this machine (admin). Proxied over the WireGuard mesh — same privileges as the aetherixd process.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <HostExecTerminal machineId={m.id} className="h-[26rem] w-full overflow-hidden rounded-md border p-2" />
+        </CardContent>
+      </Card>
       <Dialog open={removing} onOpenChange={setRemoving}>
         <DialogContent>
           <DialogHeader title={`Remove ${m.name}?`} description="Replicas on this machine are rescheduled where possible. This cannot be undone." />

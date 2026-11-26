@@ -117,6 +117,31 @@ func (c *Client) GetObject(ctx context.Context, key string) (io.ReadCloser, erro
 	return res.Body, nil
 }
 
+// DeleteObject removes key. Missing keys are ignored.
+func (c *Client) DeleteObject(ctx context.Context, key string) error {
+	u, err := c.objectURL(key)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, nil)
+	if err != nil {
+		return err
+	}
+	if err := c.sign(req, nil); err != nil {
+		return err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound || res.StatusCode/100 == 2 {
+		return nil
+	}
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+	return fmt.Errorf("s3 delete %s: %s: %s", key, res.Status, string(b))
+}
+
 // ListObjects returns keys under prefix (non-recursive delimiter "/").
 func (c *Client) ListObjects(ctx context.Context, prefix string) ([]string, error) {
 	base, err := c.bucketURL()

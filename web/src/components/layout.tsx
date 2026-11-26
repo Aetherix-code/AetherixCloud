@@ -4,6 +4,7 @@ import {
   ArrowUpCircle,
   Bot,
   Cloud,
+  Database,
   FolderKanban,
   GitBranch,
   LayoutDashboard,
@@ -51,6 +52,7 @@ const SETTINGS_NAV: NavLink[] = [
   { to: '/settings/github', label: 'GitHub App', short: 'GitHub', icon: GitBranch },
   { to: '/settings/agents', label: 'AI agents', short: 'Agents', icon: Bot },
   { to: '/settings/audit', label: 'Audit log', short: 'Audit', icon: ScrollText },
+  { to: '/settings/s3-targets', label: 'S3 Targets', short: 'S3', icon: Database },
   { to: '/settings/backups', label: 'Backups', icon: Cloud },
   { to: '/settings/updates', label: 'Updates', icon: ArrowUpCircle },
   { to: '/settings/general', label: 'General', icon: Settings },
@@ -65,6 +67,7 @@ function chromeTitle(pathname: string): { title: string; showShellTitle: boolean
   if (pathname.startsWith('/settings/github')) return { title: 'GitHub App', showShellTitle: true }
   if (pathname.startsWith('/settings/agents')) return { title: 'AI agents', showShellTitle: true }
   if (pathname.startsWith('/settings/audit')) return { title: 'Audit log', showShellTitle: true }
+  if (pathname.startsWith('/settings/s3-targets')) return { title: 'S3 Targets', showShellTitle: true }
   if (pathname.startsWith('/settings/backups')) return { title: 'Backups', showShellTitle: true }
   if (pathname.startsWith('/settings/updates')) return { title: 'Updates', showShellTitle: true }
   if (pathname.startsWith('/settings/general')) return { title: 'General', showShellTitle: true }

@@ -1105,6 +1105,314 @@ func (*ReportHeartbeatResponse) Descriptor() ([]byte, []int) {
 	return file_aetherix_v1_machine_proto_rawDescGZIP(), []int{18}
 }
 
+type HostExecStart struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MachineId     string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"` // target machine (id or name)
+	Rows          int32                  `protobuf:"varint,2,opt,name=rows,proto3" json:"rows,omitempty"`
+	Cols          int32                  `protobuf:"varint,3,opt,name=cols,proto3" json:"cols,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HostExecStart) Reset() {
+	*x = HostExecStart{}
+	mi := &file_aetherix_v1_machine_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HostExecStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HostExecStart) ProtoMessage() {}
+
+func (x *HostExecStart) ProtoReflect() protoreflect.Message {
+	mi := &file_aetherix_v1_machine_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HostExecStart.ProtoReflect.Descriptor instead.
+func (*HostExecStart) Descriptor() ([]byte, []int) {
+	return file_aetherix_v1_machine_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *HostExecStart) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *HostExecStart) GetRows() int32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+func (x *HostExecStart) GetCols() int32 {
+	if x != nil {
+		return x.Cols
+	}
+	return 0
+}
+
+type HostExecResize struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rows          int32                  `protobuf:"varint,1,opt,name=rows,proto3" json:"rows,omitempty"`
+	Cols          int32                  `protobuf:"varint,2,opt,name=cols,proto3" json:"cols,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HostExecResize) Reset() {
+	*x = HostExecResize{}
+	mi := &file_aetherix_v1_machine_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HostExecResize) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HostExecResize) ProtoMessage() {}
+
+func (x *HostExecResize) ProtoReflect() protoreflect.Message {
+	mi := &file_aetherix_v1_machine_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HostExecResize.ProtoReflect.Descriptor instead.
+func (*HostExecResize) Descriptor() ([]byte, []int) {
+	return file_aetherix_v1_machine_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *HostExecResize) GetRows() int32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+func (x *HostExecResize) GetCols() int32 {
+	if x != nil {
+		return x.Cols
+	}
+	return 0
+}
+
+type HostExecRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*HostExecRequest_Start
+	//	*HostExecRequest_Stdin
+	//	*HostExecRequest_Resize
+	Msg           isHostExecRequest_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HostExecRequest) Reset() {
+	*x = HostExecRequest{}
+	mi := &file_aetherix_v1_machine_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HostExecRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HostExecRequest) ProtoMessage() {}
+
+func (x *HostExecRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aetherix_v1_machine_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HostExecRequest.ProtoReflect.Descriptor instead.
+func (*HostExecRequest) Descriptor() ([]byte, []int) {
+	return file_aetherix_v1_machine_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *HostExecRequest) GetMsg() isHostExecRequest_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *HostExecRequest) GetStart() *HostExecStart {
+	if x != nil {
+		if x, ok := x.Msg.(*HostExecRequest_Start); ok {
+			return x.Start
+		}
+	}
+	return nil
+}
+
+func (x *HostExecRequest) GetStdin() []byte {
+	if x != nil {
+		if x, ok := x.Msg.(*HostExecRequest_Stdin); ok {
+			return x.Stdin
+		}
+	}
+	return nil
+}
+
+func (x *HostExecRequest) GetResize() *HostExecResize {
+	if x != nil {
+		if x, ok := x.Msg.(*HostExecRequest_Resize); ok {
+			return x.Resize
+		}
+	}
+	return nil
+}
+
+type isHostExecRequest_Msg interface {
+	isHostExecRequest_Msg()
+}
+
+type HostExecRequest_Start struct {
+	Start *HostExecStart `protobuf:"bytes,1,opt,name=start,proto3,oneof"`
+}
+
+type HostExecRequest_Stdin struct {
+	Stdin []byte `protobuf:"bytes,2,opt,name=stdin,proto3,oneof"`
+}
+
+type HostExecRequest_Resize struct {
+	Resize *HostExecResize `protobuf:"bytes,3,opt,name=resize,proto3,oneof"`
+}
+
+func (*HostExecRequest_Start) isHostExecRequest_Msg() {}
+
+func (*HostExecRequest_Stdin) isHostExecRequest_Msg() {}
+
+func (*HostExecRequest_Resize) isHostExecRequest_Msg() {}
+
+type HostExecResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*HostExecResponse_Stdout
+	//	*HostExecResponse_Stderr
+	//	*HostExecResponse_ExitCode
+	Msg           isHostExecResponse_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HostExecResponse) Reset() {
+	*x = HostExecResponse{}
+	mi := &file_aetherix_v1_machine_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HostExecResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HostExecResponse) ProtoMessage() {}
+
+func (x *HostExecResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aetherix_v1_machine_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HostExecResponse.ProtoReflect.Descriptor instead.
+func (*HostExecResponse) Descriptor() ([]byte, []int) {
+	return file_aetherix_v1_machine_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *HostExecResponse) GetMsg() isHostExecResponse_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *HostExecResponse) GetStdout() []byte {
+	if x != nil {
+		if x, ok := x.Msg.(*HostExecResponse_Stdout); ok {
+			return x.Stdout
+		}
+	}
+	return nil
+}
+
+func (x *HostExecResponse) GetStderr() []byte {
+	if x != nil {
+		if x, ok := x.Msg.(*HostExecResponse_Stderr); ok {
+			return x.Stderr
+		}
+	}
+	return nil
+}
+
+func (x *HostExecResponse) GetExitCode() int32 {
+	if x != nil {
+		if x, ok := x.Msg.(*HostExecResponse_ExitCode); ok {
+			return x.ExitCode
+		}
+	}
+	return 0
+}
+
+type isHostExecResponse_Msg interface {
+	isHostExecResponse_Msg()
+}
+
+type HostExecResponse_Stdout struct {
+	Stdout []byte `protobuf:"bytes,1,opt,name=stdout,proto3,oneof"`
+}
+
+type HostExecResponse_Stderr struct {
+	Stderr []byte `protobuf:"bytes,2,opt,name=stderr,proto3,oneof"`
+}
+
+type HostExecResponse_ExitCode struct {
+	ExitCode int32 `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3,oneof"`
+}
+
+func (*HostExecResponse_Stdout) isHostExecResponse_Msg() {}
+
+func (*HostExecResponse_Stderr) isHostExecResponse_Msg() {}
+
+func (*HostExecResponse_ExitCode) isHostExecResponse_Msg() {}
+
 var File_aetherix_v1_machine_proto protoreflect.FileDescriptor
 
 const file_aetherix_v1_machine_proto_rawDesc = "" +
@@ -1193,7 +1501,25 @@ const file_aetherix_v1_machine_proto_rawDesc = "" +
 	"\n" +
 	"containers\x18\x04 \x01(\x05R\n" +
 	"containers\"\x19\n" +
-	"\x17ReportHeartbeatResponse2\x9f\x06\n" +
+	"\x17ReportHeartbeatResponse\"V\n" +
+	"\rHostExecStart\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x12\n" +
+	"\x04rows\x18\x02 \x01(\x05R\x04rows\x12\x12\n" +
+	"\x04cols\x18\x03 \x01(\x05R\x04cols\"8\n" +
+	"\x0eHostExecResize\x12\x12\n" +
+	"\x04rows\x18\x01 \x01(\x05R\x04rows\x12\x12\n" +
+	"\x04cols\x18\x02 \x01(\x05R\x04cols\"\x9b\x01\n" +
+	"\x0fHostExecRequest\x122\n" +
+	"\x05start\x18\x01 \x01(\v2\x1a.aetherix.v1.HostExecStartH\x00R\x05start\x12\x16\n" +
+	"\x05stdin\x18\x02 \x01(\fH\x00R\x05stdin\x125\n" +
+	"\x06resize\x18\x03 \x01(\v2\x1b.aetherix.v1.HostExecResizeH\x00R\x06resizeB\x05\n" +
+	"\x03msg\"l\n" +
+	"\x10HostExecResponse\x12\x18\n" +
+	"\x06stdout\x18\x01 \x01(\fH\x00R\x06stdout\x12\x18\n" +
+	"\x06stderr\x18\x02 \x01(\fH\x00R\x06stderr\x12\x1d\n" +
+	"\texit_code\x18\x03 \x01(\x05H\x00R\bexitCodeB\x05\n" +
+	"\x03msg2\xec\x06\n" +
 	"\x0eMachineService\x12S\n" +
 	"\fListMachines\x12 .aetherix.v1.ListMachinesRequest\x1a!.aetherix.v1.ListMachinesResponse\x12M\n" +
 	"\n" +
@@ -1204,7 +1530,8 @@ const file_aetherix_v1_machine_proto_rawDesc = "" +
 	"\rCordonMachine\x12!.aetherix.v1.CordonMachineRequest\x1a\".aetherix.v1.CordonMachineResponse\x12S\n" +
 	"\fDrainMachine\x12 .aetherix.v1.DrainMachineRequest\x1a!.aetherix.v1.DrainMachineResponse\x12V\n" +
 	"\rRemoveMachine\x12!.aetherix.v1.RemoveMachineRequest\x1a\".aetherix.v1.RemoveMachineResponse\x12\\\n" +
-	"\x0fReportHeartbeat\x12#.aetherix.v1.ReportHeartbeatRequest\x1a$.aetherix.v1.ReportHeartbeatResponseB\xaa\x01\n" +
+	"\x0fReportHeartbeat\x12#.aetherix.v1.ReportHeartbeatRequest\x1a$.aetherix.v1.ReportHeartbeatResponse\x12K\n" +
+	"\bHostExec\x12\x1c.aetherix.v1.HostExecRequest\x1a\x1d.aetherix.v1.HostExecResponse(\x010\x01B\xaa\x01\n" +
 	"\x0fcom.aetherix.v1B\fMachineProtoP\x01Z<github.com/aetherix/aetherixcloud/gen/aetherix/v1;aetherixv1\xa2\x02\x03AXX\xaa\x02\vAetherix.V1\xca\x02\vAetherix\\V1\xe2\x02\x17Aetherix\\V1\\GPBMetadata\xea\x02\fAetherix::V1b\x06proto3"
 
 var (
@@ -1219,7 +1546,7 @@ func file_aetherix_v1_machine_proto_rawDescGZIP() []byte {
 	return file_aetherix_v1_machine_proto_rawDescData
 }
 
-var file_aetherix_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_aetherix_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_aetherix_v1_machine_proto_goTypes = []any{
 	(*ListMachinesRequest)(nil),     // 0: aetherix.v1.ListMachinesRequest
 	(*ListMachinesResponse)(nil),    // 1: aetherix.v1.ListMachinesResponse
@@ -1240,52 +1567,60 @@ var file_aetherix_v1_machine_proto_goTypes = []any{
 	(*RemoveMachineResponse)(nil),   // 16: aetherix.v1.RemoveMachineResponse
 	(*ReportHeartbeatRequest)(nil),  // 17: aetherix.v1.ReportHeartbeatRequest
 	(*ReportHeartbeatResponse)(nil), // 18: aetherix.v1.ReportHeartbeatResponse
-	nil,                             // 19: aetherix.v1.JoinMachineRequest.LabelsEntry
-	nil,                             // 20: aetherix.v1.UpdateMachineRequest.LabelsEntry
-	(*Machine)(nil),                 // 21: aetherix.v1.Machine
-	(MachineRole)(0),                // 22: aetherix.v1.MachineRole
-	(*Resources)(nil),               // 23: aetherix.v1.Resources
-	(*Cluster)(nil),                 // 24: aetherix.v1.Cluster
+	(*HostExecStart)(nil),           // 19: aetherix.v1.HostExecStart
+	(*HostExecResize)(nil),          // 20: aetherix.v1.HostExecResize
+	(*HostExecRequest)(nil),         // 21: aetherix.v1.HostExecRequest
+	(*HostExecResponse)(nil),        // 22: aetherix.v1.HostExecResponse
+	nil,                             // 23: aetherix.v1.JoinMachineRequest.LabelsEntry
+	nil,                             // 24: aetherix.v1.UpdateMachineRequest.LabelsEntry
+	(*Machine)(nil),                 // 25: aetherix.v1.Machine
+	(MachineRole)(0),                // 26: aetherix.v1.MachineRole
+	(*Resources)(nil),               // 27: aetherix.v1.Resources
+	(*Cluster)(nil),                 // 28: aetherix.v1.Cluster
 }
 var file_aetherix_v1_machine_proto_depIdxs = []int32{
-	21, // 0: aetherix.v1.ListMachinesResponse.machines:type_name -> aetherix.v1.Machine
-	21, // 1: aetherix.v1.GetMachineResponse.machine:type_name -> aetherix.v1.Machine
-	22, // 2: aetherix.v1.CreateJoinTokenRequest.roles:type_name -> aetherix.v1.MachineRole
-	23, // 3: aetherix.v1.JoinMachineRequest.capacity:type_name -> aetherix.v1.Resources
-	19, // 4: aetherix.v1.JoinMachineRequest.labels:type_name -> aetherix.v1.JoinMachineRequest.LabelsEntry
-	21, // 5: aetherix.v1.JoinMachineResponse.machine:type_name -> aetherix.v1.Machine
-	24, // 6: aetherix.v1.JoinMachineResponse.cluster:type_name -> aetherix.v1.Cluster
+	25, // 0: aetherix.v1.ListMachinesResponse.machines:type_name -> aetherix.v1.Machine
+	25, // 1: aetherix.v1.GetMachineResponse.machine:type_name -> aetherix.v1.Machine
+	26, // 2: aetherix.v1.CreateJoinTokenRequest.roles:type_name -> aetherix.v1.MachineRole
+	27, // 3: aetherix.v1.JoinMachineRequest.capacity:type_name -> aetherix.v1.Resources
+	23, // 4: aetherix.v1.JoinMachineRequest.labels:type_name -> aetherix.v1.JoinMachineRequest.LabelsEntry
+	25, // 5: aetherix.v1.JoinMachineResponse.machine:type_name -> aetherix.v1.Machine
+	28, // 6: aetherix.v1.JoinMachineResponse.cluster:type_name -> aetherix.v1.Cluster
 	6,  // 7: aetherix.v1.JoinMachineResponse.peers:type_name -> aetherix.v1.PeerInfo
-	20, // 8: aetherix.v1.UpdateMachineRequest.labels:type_name -> aetherix.v1.UpdateMachineRequest.LabelsEntry
-	22, // 9: aetherix.v1.UpdateMachineRequest.roles:type_name -> aetherix.v1.MachineRole
-	21, // 10: aetherix.v1.UpdateMachineResponse.machine:type_name -> aetherix.v1.Machine
-	21, // 11: aetherix.v1.CordonMachineResponse.machine:type_name -> aetherix.v1.Machine
-	21, // 12: aetherix.v1.DrainMachineResponse.machine:type_name -> aetherix.v1.Machine
-	23, // 13: aetherix.v1.ReportHeartbeatRequest.used:type_name -> aetherix.v1.Resources
-	23, // 14: aetherix.v1.ReportHeartbeatRequest.capacity:type_name -> aetherix.v1.Resources
-	0,  // 15: aetherix.v1.MachineService.ListMachines:input_type -> aetherix.v1.ListMachinesRequest
-	2,  // 16: aetherix.v1.MachineService.GetMachine:input_type -> aetherix.v1.GetMachineRequest
-	4,  // 17: aetherix.v1.MachineService.CreateJoinToken:input_type -> aetherix.v1.CreateJoinTokenRequest
-	7,  // 18: aetherix.v1.MachineService.JoinMachine:input_type -> aetherix.v1.JoinMachineRequest
-	9,  // 19: aetherix.v1.MachineService.UpdateMachine:input_type -> aetherix.v1.UpdateMachineRequest
-	11, // 20: aetherix.v1.MachineService.CordonMachine:input_type -> aetherix.v1.CordonMachineRequest
-	13, // 21: aetherix.v1.MachineService.DrainMachine:input_type -> aetherix.v1.DrainMachineRequest
-	15, // 22: aetherix.v1.MachineService.RemoveMachine:input_type -> aetherix.v1.RemoveMachineRequest
-	17, // 23: aetherix.v1.MachineService.ReportHeartbeat:input_type -> aetherix.v1.ReportHeartbeatRequest
-	1,  // 24: aetherix.v1.MachineService.ListMachines:output_type -> aetherix.v1.ListMachinesResponse
-	3,  // 25: aetherix.v1.MachineService.GetMachine:output_type -> aetherix.v1.GetMachineResponse
-	5,  // 26: aetherix.v1.MachineService.CreateJoinToken:output_type -> aetherix.v1.CreateJoinTokenResponse
-	8,  // 27: aetherix.v1.MachineService.JoinMachine:output_type -> aetherix.v1.JoinMachineResponse
-	10, // 28: aetherix.v1.MachineService.UpdateMachine:output_type -> aetherix.v1.UpdateMachineResponse
-	12, // 29: aetherix.v1.MachineService.CordonMachine:output_type -> aetherix.v1.CordonMachineResponse
-	14, // 30: aetherix.v1.MachineService.DrainMachine:output_type -> aetherix.v1.DrainMachineResponse
-	16, // 31: aetherix.v1.MachineService.RemoveMachine:output_type -> aetherix.v1.RemoveMachineResponse
-	18, // 32: aetherix.v1.MachineService.ReportHeartbeat:output_type -> aetherix.v1.ReportHeartbeatResponse
-	24, // [24:33] is the sub-list for method output_type
-	15, // [15:24] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	24, // 8: aetherix.v1.UpdateMachineRequest.labels:type_name -> aetherix.v1.UpdateMachineRequest.LabelsEntry
+	26, // 9: aetherix.v1.UpdateMachineRequest.roles:type_name -> aetherix.v1.MachineRole
+	25, // 10: aetherix.v1.UpdateMachineResponse.machine:type_name -> aetherix.v1.Machine
+	25, // 11: aetherix.v1.CordonMachineResponse.machine:type_name -> aetherix.v1.Machine
+	25, // 12: aetherix.v1.DrainMachineResponse.machine:type_name -> aetherix.v1.Machine
+	27, // 13: aetherix.v1.ReportHeartbeatRequest.used:type_name -> aetherix.v1.Resources
+	27, // 14: aetherix.v1.ReportHeartbeatRequest.capacity:type_name -> aetherix.v1.Resources
+	19, // 15: aetherix.v1.HostExecRequest.start:type_name -> aetherix.v1.HostExecStart
+	20, // 16: aetherix.v1.HostExecRequest.resize:type_name -> aetherix.v1.HostExecResize
+	0,  // 17: aetherix.v1.MachineService.ListMachines:input_type -> aetherix.v1.ListMachinesRequest
+	2,  // 18: aetherix.v1.MachineService.GetMachine:input_type -> aetherix.v1.GetMachineRequest
+	4,  // 19: aetherix.v1.MachineService.CreateJoinToken:input_type -> aetherix.v1.CreateJoinTokenRequest
+	7,  // 20: aetherix.v1.MachineService.JoinMachine:input_type -> aetherix.v1.JoinMachineRequest
+	9,  // 21: aetherix.v1.MachineService.UpdateMachine:input_type -> aetherix.v1.UpdateMachineRequest
+	11, // 22: aetherix.v1.MachineService.CordonMachine:input_type -> aetherix.v1.CordonMachineRequest
+	13, // 23: aetherix.v1.MachineService.DrainMachine:input_type -> aetherix.v1.DrainMachineRequest
+	15, // 24: aetherix.v1.MachineService.RemoveMachine:input_type -> aetherix.v1.RemoveMachineRequest
+	17, // 25: aetherix.v1.MachineService.ReportHeartbeat:input_type -> aetherix.v1.ReportHeartbeatRequest
+	21, // 26: aetherix.v1.MachineService.HostExec:input_type -> aetherix.v1.HostExecRequest
+	1,  // 27: aetherix.v1.MachineService.ListMachines:output_type -> aetherix.v1.ListMachinesResponse
+	3,  // 28: aetherix.v1.MachineService.GetMachine:output_type -> aetherix.v1.GetMachineResponse
+	5,  // 29: aetherix.v1.MachineService.CreateJoinToken:output_type -> aetherix.v1.CreateJoinTokenResponse
+	8,  // 30: aetherix.v1.MachineService.JoinMachine:output_type -> aetherix.v1.JoinMachineResponse
+	10, // 31: aetherix.v1.MachineService.UpdateMachine:output_type -> aetherix.v1.UpdateMachineResponse
+	12, // 32: aetherix.v1.MachineService.CordonMachine:output_type -> aetherix.v1.CordonMachineResponse
+	14, // 33: aetherix.v1.MachineService.DrainMachine:output_type -> aetherix.v1.DrainMachineResponse
+	16, // 34: aetherix.v1.MachineService.RemoveMachine:output_type -> aetherix.v1.RemoveMachineResponse
+	18, // 35: aetherix.v1.MachineService.ReportHeartbeat:output_type -> aetherix.v1.ReportHeartbeatResponse
+	22, // 36: aetherix.v1.MachineService.HostExec:output_type -> aetherix.v1.HostExecResponse
+	27, // [27:37] is the sub-list for method output_type
+	17, // [17:27] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_aetherix_v1_machine_proto_init() }
@@ -1295,13 +1630,23 @@ func file_aetherix_v1_machine_proto_init() {
 	}
 	file_aetherix_v1_types_proto_init()
 	file_aetherix_v1_machine_proto_msgTypes[9].OneofWrappers = []any{}
+	file_aetherix_v1_machine_proto_msgTypes[21].OneofWrappers = []any{
+		(*HostExecRequest_Start)(nil),
+		(*HostExecRequest_Stdin)(nil),
+		(*HostExecRequest_Resize)(nil),
+	}
+	file_aetherix_v1_machine_proto_msgTypes[22].OneofWrappers = []any{
+		(*HostExecResponse_Stdout)(nil),
+		(*HostExecResponse_Stderr)(nil),
+		(*HostExecResponse_ExitCode)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aetherix_v1_machine_proto_rawDesc), len(file_aetherix_v1_machine_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

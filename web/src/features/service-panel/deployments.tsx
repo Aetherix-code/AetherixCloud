@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { GitCommit, Hammer, RotateCcw, Rocket, Square, ChevronDown, ChevronRight, Play, Box, Server } from 'lucide-react'
+import { GitCommit, Hammer, RotateCcw, Rocket, Square, ChevronDown, ChevronRight, Play, Box, Server, Power } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -13,6 +13,16 @@ import { DeployBadge, ReplicaBadge } from '@/lib/status'
 import { cn, formatBytes, formatCpu, shortId, timeAgo, tsDate } from '@/lib/utils'
 
 const inFlight = (s: DeploymentStatus) => s === DeploymentStatus.QUEUED || s === DeploymentStatus.BUILDING || s === DeploymentStatus.DEPLOYING
+
+/** Newest created_at first (fallback: id). Matches API ListDeployments ordering. */
+export function sortDeploymentsNewestFirst(deps: Deployment[]): Deployment[] {
+  return [...deps].sort((a, b) => {
+    const ta = tsDate(a.createdAt)?.getTime() ?? 0
+    const tb = tsDate(b.createdAt)?.getTime() ?? 0
+    if (tb !== ta) return tb - ta
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0
+  })
+}
 
 export function duration(d: Deployment): string {
   const a = tsDate(d.createdAt)
@@ -29,38 +39,70 @@ export function DeploymentsTab({ service }: { service: Service }) {
     queryFn: async () => (await api.services.listReplicas({ serviceId: service.id })).replicas,
     refetchInterval: 6000,
   })
-  const inv = [keys.deployments(service.id), ['service']]
+  const inv = [keys.deployments(service.id), keys.service(service.id), ['replicas'], ['service']]
   const redeploy = useAction(() => api.deploy.deploy({ serviceId: service.id, redeploy: true }), { invalidate: inv, success: 'Redeploy started' })
   const simulate = useAction(() => api.github.simulatePush({ serviceId: service.id, ref: '' }), { invalidate: inv, success: 'Push simulated; build queued' })
+  const scale = useAction((replicas: number) => api.services.scaleService({ serviceId: service.id, replicas }), {
+    invalidate: inv,
+    success: 'Scaled',
+  })
   const hasGithub = !!service.spec?.source?.github
+  const global = service.spec?.mode === 2
+  const replicasWanted = service.spec?.replicas ?? 0
+  const running = replicasWanted > 0
+  const prevKey = `ax:prev-replicas:${service.id}`
+  const stop = () => {
+    if (global) return
+    if (replicasWanted > 0) sessionStorage.setItem(prevKey, String(replicasWanted))
+    scale.mutate(0)
+  }
+  const start = () => {
+    if (global) return
+    const stored = Number(sessionStorage.getItem(prevKey) || '')
+    scale.mutate(stored > 0 ? stored : 1)
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => redeploy.mutate(undefined)} disabled={redeploy.isPending}><Rocket />Redeploy</Button>
-        {hasGithub && <Button size="sm" variant="secondary" onClick={() => simulate.mutate(undefined)} disabled={simulate.isPending} title="Fetch the latest commit and run the real pipeline"><Play />Simulate push</Button>}
+        <Button size="sm" onClick={() => redeploy.mutate(undefined)} disabled={redeploy.isPending || !running}><Rocket />Redeploy</Button>
+        {!global && (
+          <>
+            <Button size="sm" variant="secondary" disabled={!running || scale.isPending} onClick={stop}><Power />Stop app</Button>
+            <Button size="sm" variant="secondary" disabled={running || scale.isPending} onClick={start}><Play />Start app</Button>
+          </>
+        )}
+        {hasGithub && <Button size="sm" variant="outline" onClick={() => simulate.mutate(undefined)} disabled={simulate.isPending} title="Fetch the latest commit and run the real pipeline"><Play />Simulate push</Button>}
       </div>
+      {!global && (
+        <p className="text-xs text-muted-foreground">
+          Stop scales to 0 (brief downtime). Start restores the previous replica count{replicasWanted === 0 ? ' (app is stopped)' : ''}.
+        </p>
+      )}
       {simulate.error && isUnimplemented(simulate.error) && <p className="text-xs text-muted-foreground">GitHub integration isn’t available on this node yet.</p>}
       {q.isLoading ? <ListSkeleton /> : q.error ? <QueryError error={q.error} what="deployments" /> : !q.data?.length ? (
         <Card><Empty title="No deployments yet">Deploy this service to see its history here.</Empty></Card>
       ) : (
         <ol className="relative space-y-3 before:absolute before:bottom-2 before:left-[11px] before:top-2 before:w-px before:bg-border" aria-label="Deployment timeline">
-          {q.data.map((d, i) => (
-            <DeploymentItem
-              key={d.id}
-              d={d}
-              service={service}
-              replicas={(reps.data ?? []).filter((r) => r.deploymentId === d.id)}
-              defaultOpen={i === 0}
-            />
-          ))}
+          {sortDeploymentsNewestFirst(q.data).map((d, i) => {
+            const active = d.id === service.activeDeploymentId
+            return (
+              <DeploymentItem
+                key={d.id}
+                d={d}
+                service={service}
+                replicas={(reps.data ?? []).filter((r) => r.deploymentId === d.id)}
+                defaultOpen={i === 0 || active}
+              />
+            )
+          })}
         </ol>
       )}
     </div>
   )
 }
 
-function DeploymentItem({ d, service, replicas, defaultOpen }: { d: Deployment; service: Service; replicas: { id: string; state: ReplicaState; machineId: string; message: string }[]; defaultOpen: boolean }) {
+function DeploymentItem({ d, service, replicas, defaultOpen }: { d: Deployment; service: Service; replicas: { id: string; state: ReplicaState; machineId: string; message?: string; startedAt?: unknown }[]; defaultOpen: boolean }) {
   const [open, setOpen] = useState(defaultOpen)
   const active = d.id === service.activeDeploymentId
   const inv = [keys.deployments(service.id), ['service']]
@@ -78,7 +120,7 @@ function DeploymentItem({ d, service, replicas, defaultOpen }: { d: Deployment; 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <DeployBadge status={d.status} />
-              {active && <span className="text-xs font-medium text-success">current</span>}
+              {active && <Badge tone="success">current</Badge>}
             </div>
             <div className="mt-1 flex items-center gap-1.5 truncate text-sm"><GitCommit className="size-3.5 shrink-0 text-muted-foreground" /><code className="text-xs">{d.commitSha || shortId(d.id)}</code><span className="truncate">{d.commitMessage || (image ? `Image ${image}` : 'Manual deploy')}</span></div>
             <div className="mt-0.5 text-xs text-muted-foreground">{d.author && `${d.author} · `}{timeAgo(d.createdAt)} · {duration(d)}</div>
@@ -127,14 +169,21 @@ function DeploymentItem({ d, service, replicas, defaultOpen }: { d: Deployment; 
               <div>
                 <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Server className="size-3.5" />Replicas on this deployment</div>
                 <ul className="space-y-1">
-                  {replicas.map((r) => (
-                    <li key={r.id} className="flex items-center gap-2 text-sm">
-                      <ReplicaBadge state={r.state} />
-                      <code className="text-xs text-muted-foreground">{shortId(r.id)}</code>
-                      <span className="text-xs text-muted-foreground">on {shortId(r.machineId)}</span>
-                      {r.message && <span className="truncate text-xs text-muted-foreground">{r.message}</span>}
-                    </li>
-                  ))}
+                  {replicas.map((r) => {
+                    const unhealthy = /health check fail/i.test(r.message || '')
+                    return (
+                      <li key={r.id} className={cn('flex flex-wrap items-center gap-2 rounded-md px-1.5 py-1 text-sm', unhealthy && 'bg-destructive/10')}>
+                        <ReplicaBadge state={r.state} message={r.message} />
+                        <code className="text-xs text-muted-foreground">{shortId(r.id)}</code>
+                        <span className="text-xs text-muted-foreground">on {shortId(r.machineId)}</span>
+                        {r.message && (
+                          <span className={cn('truncate text-xs', unhealthy ? 'font-medium text-destructive' : 'text-muted-foreground')}>
+                            {r.message}
+                          </span>
+                        )}
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
             )}

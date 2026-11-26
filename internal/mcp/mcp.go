@@ -44,8 +44,8 @@ type Config struct {
 	Auth  *auth.Authenticator
 	// OAuth supplies the resource-metadata URL for 401 challenges (optional).
 	OAuth *oauth.Server
-	// API returns the PUBLIC api handler (api.PublicHandler) the tools call
-	// in-process. It may return nil until the daemon is ready.
+	// API returns the handler tools call in-process (Connect RPCs plus hook
+	// HTTP paths such as /api/backups). It may return nil until ready.
 	API func() http.Handler
 	// RatePerMinute / Burst are the per-token limits (defaults 120 / 40).
 	RatePerMinute int
@@ -78,14 +78,16 @@ func New(cfg Config) *Server {
 	}
 	s := &Server{cfg: cfg, rate: auth.NewRateLimiter(cfg.RatePerMinute, cfg.Burst), log: cfg.Logger}
 	s.srv = sdk.NewServer(&sdk.Implementation{Name: "aetherixcloud", Title: "AetherixCloud", Version: cfg.Version}, &sdk.ServerOptions{
-		Instructions: "Control an AetherixCloud cluster: list and inspect projects, services, deployments, logs and machines; " +
-			"deploy, scale and configure services; manage machines. Secret values are never returned. " +
-			"Destructive tools do nothing until called again with confirm=true; the first call returns a dry-run summary.",
+		Instructions: "Full control of an AetherixCloud cluster: projects, services, deployments, logs, machines, users, " +
+			"GitHub App, upgrades, S3 backup targets, build concurrency/images, and cluster settings. " +
+			"Secret values are never returned. Destructive tools do nothing until called again with confirm=true; " +
+			"the first call returns a dry-run summary.",
 	})
 	s.srv.AddReceivingMiddleware(s.filterTools)
 	s.registerReadTools()
 	s.registerDeployTools()
 	s.registerAdminTools()
+	s.registerSettingsTools()
 	s.registerResources()
 	s.registerPrompts()
 	return s

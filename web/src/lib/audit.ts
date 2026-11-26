@@ -17,6 +17,7 @@ const ACTION_LABELS: Record<string, string> = {
   'MachineService/CordonMachine': 'Cordoned machine',
   'MachineService/DrainMachine': 'Drained machine',
   'MachineService/RemoveMachine': 'Removed machine',
+  'MachineService/HostExec': 'Opened host shell',
   'ClusterService/UpdateCluster': 'Updated cluster settings',
   'ClusterService/StartUpgrade': 'Started cluster upgrade',
   'ClusterService/CancelUpgrade': 'Cancelled cluster upgrade',

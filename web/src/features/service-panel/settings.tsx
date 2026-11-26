@@ -167,7 +167,7 @@ function BuildSection({ service }: { service: Service }) {
         <Input value={f.watch} onChange={set('watch')} placeholder="apps/web/**, packages/ui/**" className="font-mono text-xs" />
       </Field>
       <div className="flex justify-end gap-2">
-        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate({ mask: ['build'], redeploy: true, spec: { build: { ...b, builder: f.builder, context: f.context.replace(/^\/+|\/+$/g, ''), dockerfile: f.dockerfile, buildCommand: f.buildCommand, startCommand: f.startCommand, platform: f.platform, watchPaths: f.watch.split(',').map((x) => x.trim()).filter(Boolean) } } })}>Save & rebuild</Button>
+        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate({ mask: ['build'], redeploy: true, spec: { build: { ...b, builder: f.builder, context: f.context.replace(/^\/+|\/+$/g, ''), dockerfile: f.dockerfile, buildCommand: f.buildCommand, startCommand: f.startCommand, platform: f.platform, watchPaths: f.watch.split(',').map((x) => x.trim()).filter(Boolean), imageRetain: b?.imageRetain ?? 0, imageS3TargetId: b?.imageS3TargetId ?? '' } } })}>Save & rebuild</Button>
       </div>
     </Section>
   )
@@ -244,13 +244,17 @@ function ScalingSection({ service, replicas: reps }: { service: Service; replica
   const [strategy, setStrategy] = useState(spec?.strategy ?? DeployStrategy.START_FIRST)
   const [machines, setMachines] = useState((spec?.placement?.machines ?? []).join(', '))
   const machinesQ = useMachines()
-  const scale = useAction(() => api.services.scaleService({ serviceId: service.id, replicas: n }), { invalidate: [keys.service(service.id), ['project']], success: 'Scaled' })
+  const scale = useAction((replicas: number) => api.services.scaleService({ serviceId: service.id, replicas }), {
+    invalidate: [keys.service(service.id), ['project'], ['replicas']],
+    success: 'Scaled',
+  })
   const save = useSpecUpdate(service)
+  const global = spec?.mode === 2
   return (
-    <Section title="Replicas & placement" description={`${reps.filter((r) => r.state === ReplicaState.RUNNING).length} running · mode ${spec?.mode === 2 ? 'global' : 'replicated'}`}>
+    <Section title="Replicas & placement" description={`${reps.filter((r) => r.state === ReplicaState.RUNNING).length} running · mode ${spec?.mode === 2 ? 'global' : 'replicated'}. Stop/Start live on the Deployments tab.`}>
       <div className="flex items-end gap-2">
-        <Field label="Replicas"><Input type="number" min={0} className="w-24" value={n} onChange={(e) => setN(Number(e.target.value))} disabled={spec?.mode === 2} /></Field>
-        <Button size="sm" variant="secondary" disabled={n === spec?.replicas || scale.isPending} onClick={() => scale.mutate(undefined)}>Scale</Button>
+        <Field label="Replicas"><Input type="number" min={0} className="w-24" value={n} onChange={(e) => setN(Number(e.target.value))} disabled={global} /></Field>
+        <Button size="sm" variant="secondary" disabled={n === spec?.replicas || scale.isPending || global} onClick={() => scale.mutate(n)}>Scale</Button>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Deploy strategy" hint="Stop-first is used for services with exclusive volumes.">
@@ -386,7 +390,7 @@ function VolumesSection({ service }: { service: Service }) {
     >
       <div className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         Volumes live under <strong className="font-medium text-foreground">Settings → Persistent storage</strong> on each service.
-        Use <em>backup &amp; restore</em> if the service should reschedule after a node failure (requires S3 backups in cluster Settings → Backups).
+        Use <em>backup &amp; restore</em> if the service should reschedule after a node failure (requires an S3 target under Settings → S3 Targets; schedule and retain are set per volume).
         Size limits are applied when the volume is first created.
       </div>
 
@@ -402,6 +406,9 @@ function VolumesSection({ service }: { service: Service }) {
                 <Badge tone={v.persistence === 'backup-restore' ? 'info' : undefined}>
                   {v.persistence === 'backup-restore' ? 'backup-restore' : 'local'}
                 </Badge>
+                {v.persistence === 'backup-restore' && (
+                  <Badge>{v.backupCron || '0 3 * * *'} · keep {v.backupRetain > 0 ? v.backupRetain : 7}</Badge>
+                )}
                 {!!v.sizeBytes && <Badge>{formatBytes(v.sizeBytes)}</Badge>}
                 {v.readOnly && <Badge>read-only</Badge>}
               </div>

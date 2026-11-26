@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useTheme } from '@/lib/theme'
 import { openExec, type ExecSession } from '@/lib/exec'
+import { openHostExec } from '@/lib/host-exec'
 
 const darkTheme = { background: '#0a0b0f', foreground: '#d8dae3', cursor: '#8b5cf6', selectionBackground: '#3b2f6b' }
 const lightTheme = { background: '#ffffff', foreground: '#1b1d24', cursor: '#7c3aed', selectionBackground: '#ddd6fe' }
@@ -101,4 +102,34 @@ export function ExecTerminal({ serviceId, replicaId, className }: { serviceId: s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceId, replicaId])
   return <div ref={host} className={className ?? 'h-80 w-full overflow-hidden rounded-md border p-2'} data-testid="exec-terminal" />
+}
+
+/** Interactive host shell on a cluster machine (admin). */
+export function HostExecTerminal({ machineId, className }: { machineId: string; className?: string }) {
+  const { host, term, fit } = useXterm({ cursorBlink: true })
+  useEffect(() => {
+    const t = term.current
+    if (!t) return
+    t.reset()
+    const dec = new TextDecoder()
+    const session: ExecSession = openHostExec(
+      { machineId, rows: t.rows, cols: t.cols },
+      {
+        onData: (d) => t.write(dec.decode(d, { stream: true })),
+        onExit: (c) => t.writeln(`\r\n\x1b[2m[shell exited with code ${c}]\x1b[0m`),
+        onError: (m) => t.writeln(`\r\n\x1b[31m[${m}]\x1b[0m`),
+      },
+    )
+    const d1 = t.onData((d) => session.write(d))
+    const d2 = t.onResize(({ rows, cols }) => session.resize(rows, cols))
+    fit.current?.fit()
+    t.focus()
+    return () => {
+      d1.dispose()
+      d2.dispose()
+      session.close()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machineId])
+  return <div ref={host} className={className ?? 'h-80 w-full overflow-hidden rounded-md border p-2'} data-testid="host-exec-terminal" />
 }

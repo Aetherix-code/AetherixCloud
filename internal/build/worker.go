@@ -201,6 +201,10 @@ func (w *Worker) Run(ctx context.Context) error {
 
 func (w *Worker) scan(ctx context.Context) {
 	w.reapStale(ctx)
+	// Refresh from cluster setting each scan so UI changes apply without restart.
+	if n := EffectiveMaxParallel(ctx, w.Store); n > 0 {
+		w.Concurrency = n
+	}
 	recs, err := w.Store.List(ctx, store.TableBuilds, store.Query{Where: map[string]string{"status": StatusQueued}, OrderBy: "updated_at"})
 	if err != nil || len(recs) == 0 {
 		return
@@ -213,7 +217,7 @@ func (w *Worker) scan(ctx context.Context) {
 		}
 		w.mu.Unlock()
 		if busy {
-			continue
+			continue // leave queued — picked up on a later scan when a slot frees
 		}
 		go func(id string) {
 			defer func() { w.mu.Lock(); delete(w.inflight, id); w.mu.Unlock() }()
@@ -405,6 +409,9 @@ func (w *Worker) finish(ctx context.Context, b *v1.Build, svc *v1.Service, job *
 		fmt.Fprintf(log, "==> service %s vanished, not deploying\n", svc.Id)
 		return
 	}
+	// Optional S3 archive (BuildSpec.image_retain > 0 + Settings → S3 Targets).
+	w.archiveImage(ctx, cur, image, digest, log)
+
 	cur.Spec.Image = image
 	cur.UpdatedAt = timestamppb.Now()
 	_ = store.PutService(ctx, w.Store, cur) // keep the built image on the service even if the rollout fails

@@ -112,6 +112,7 @@ func handler(d Deps, public bool) http.Handler {
 	mount(aetherixv1connect.NewGitHubServiceHandler(aetherixv1connect.UnimplementedGitHubServiceHandler{}, opts...))
 	// Browser terminal: WebSocket (ReadableStream duplex fails on HTTP/1.1 / Safari).
 	mux.Handle(ExecWSPath, execWSHandler(s, authn, public))
+	mux.Handle(HostExecWSPath, hostExecWSHandler(s, authn, public))
 	// Browser snapshot restore: raw POST (Connect client-streaming upload fails in fetch).
 	mux.Handle(RestoreHTTPPath, restoreHTTPHandler(s, authn, public))
 	return mux

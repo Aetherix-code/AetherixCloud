@@ -65,6 +65,7 @@ export function CommandPalette() {
           <Command.Item className={item} onSelect={go(() => void nav({ to: '/settings/github' }))}><GitBranch className="size-4" />Settings → GitHub App</Command.Item>
           <Command.Item className={item} onSelect={go(() => void nav({ to: '/settings/agents' }))}><Bot className="size-4" />Settings → AI agents</Command.Item>
           <Command.Item className={item} onSelect={go(() => void nav({ to: '/settings/audit' }))}><ScrollText className="size-4" />Settings → Audit log</Command.Item>
+          <Command.Item className={item} onSelect={go(() => void nav({ to: '/settings/s3-targets' }))}><Database className="size-4" />Settings → S3 Targets</Command.Item>
           <Command.Item className={item} onSelect={go(() => void nav({ to: '/settings/backups' }))}><Cloud className="size-4" />Settings → Backups</Command.Item>
           <Command.Item className={item} onSelect={go(() => void nav({ to: '/settings/updates' }))}><ArrowUpCircle className="size-4" />Settings → Updates</Command.Item>
           <Command.Item className={item} onSelect={go(() => void nav({ to: '/settings/general' }))}><Settings className="size-4" />Settings → General</Command.Item>

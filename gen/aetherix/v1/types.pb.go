@@ -1250,7 +1250,14 @@ type VolumeMount struct {
 	// Soft size limit in bytes. Applied as the Docker local-driver "size" option
 	// when the named volume is first created. Enforcement requires host quota
 	// support (e.g. XFS+pquota); otherwise the value is stored as intent/label.
-	SizeBytes     int64 `protobuf:"varint,5,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	SizeBytes int64 `protobuf:"varint,5,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// 5-field cron (UTC) for volume snapshots when persistence=backup-restore.
+	// Empty = cluster default ("0 3 * * *").
+	BackupCron string `protobuf:"bytes,6,opt,name=backup_cron,json=backupCron,proto3" json:"backup_cron,omitempty"`
+	// How many successful S3 snapshots to keep for this volume. 0 = default (7).
+	BackupRetain int32 `protobuf:"varint,7,opt,name=backup_retain,json=backupRetain,proto3" json:"backup_retain,omitempty"`
+	// Settings → S3 Targets id. Empty = the default/first target.
+	S3TargetId    string `protobuf:"bytes,8,opt,name=s3_target_id,json=s3TargetId,proto3" json:"s3_target_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1320,6 +1327,27 @@ func (x *VolumeMount) GetSizeBytes() int64 {
 	return 0
 }
 
+func (x *VolumeMount) GetBackupCron() string {
+	if x != nil {
+		return x.BackupCron
+	}
+	return ""
+}
+
+func (x *VolumeMount) GetBackupRetain() int32 {
+	if x != nil {
+		return x.BackupRetain
+	}
+	return 0
+}
+
+func (x *VolumeMount) GetS3TargetId() string {
+	if x != nil {
+		return x.S3TargetId
+	}
+	return ""
+}
+
 type Placement struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Machine names or IDs. Empty = any eligible machine.
@@ -1377,17 +1405,23 @@ func (x *Placement) GetLabels() map[string]string {
 type BuildSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// "" (auto) | "dockerfile" | "railpack" | "image"
-	Builder       string            `protobuf:"bytes,1,opt,name=builder,proto3" json:"builder,omitempty"`
-	Context       string            `protobuf:"bytes,2,opt,name=context,proto3" json:"context,omitempty"`       // root directory (monorepos)
-	Dockerfile    string            `protobuf:"bytes,3,opt,name=dockerfile,proto3" json:"dockerfile,omitempty"` // path relative to context
-	Target        string            `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty"`
-	BuildCommand  string            `protobuf:"bytes,5,opt,name=build_command,json=buildCommand,proto3" json:"build_command,omitempty"`
-	StartCommand  string            `protobuf:"bytes,6,opt,name=start_command,json=startCommand,proto3" json:"start_command,omitempty"`
-	Args          map[string]string `protobuf:"bytes,7,rep,name=args,proto3" json:"args,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	WatchPaths    []string          `protobuf:"bytes,8,rep,name=watch_paths,json=watchPaths,proto3" json:"watch_paths,omitempty"`
-	Platform      string            `protobuf:"bytes,9,opt,name=platform,proto3" json:"platform,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Builder      string            `protobuf:"bytes,1,opt,name=builder,proto3" json:"builder,omitempty"`
+	Context      string            `protobuf:"bytes,2,opt,name=context,proto3" json:"context,omitempty"`       // root directory (monorepos)
+	Dockerfile   string            `protobuf:"bytes,3,opt,name=dockerfile,proto3" json:"dockerfile,omitempty"` // path relative to context
+	Target       string            `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty"`
+	BuildCommand string            `protobuf:"bytes,5,opt,name=build_command,json=buildCommand,proto3" json:"build_command,omitempty"`
+	StartCommand string            `protobuf:"bytes,6,opt,name=start_command,json=startCommand,proto3" json:"start_command,omitempty"`
+	Args         map[string]string `protobuf:"bytes,7,rep,name=args,proto3" json:"args,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	WatchPaths   []string          `protobuf:"bytes,8,rep,name=watch_paths,json=watchPaths,proto3" json:"watch_paths,omitempty"`
+	Platform     string            `protobuf:"bytes,9,opt,name=platform,proto3" json:"platform,omitempty"`
+	// How many successful build images to keep in the S3 archive for this
+	// service. 0 = do not archive. Prunes older objects after each upload.
+	ImageRetain int32 `protobuf:"varint,10,opt,name=image_retain,json=imageRetain,proto3" json:"image_retain,omitempty"`
+	// Settings → S3 Targets id used to store docker save archives.
+	// Empty = the default/first target (when image_retain > 0).
+	ImageS3TargetId string `protobuf:"bytes,11,opt,name=image_s3_target_id,json=imageS3TargetId,proto3" json:"image_s3_target_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *BuildSpec) Reset() {
@@ -1479,6 +1513,20 @@ func (x *BuildSpec) GetWatchPaths() []string {
 func (x *BuildSpec) GetPlatform() string {
 	if x != nil {
 		return x.Platform
+	}
+	return ""
+}
+
+func (x *BuildSpec) GetImageRetain() int32 {
+	if x != nil {
+		return x.ImageRetain
+	}
+	return 0
+}
+
+func (x *BuildSpec) GetImageS3TargetId() string {
+	if x != nil {
+		return x.ImageS3TargetId
 	}
 	return ""
 }
@@ -2759,20 +2807,25 @@ const file_aetherix_v1_types_proto_rawDesc = "" +
 	"\x10interval_seconds\x18\x05 \x01(\x05R\x0fintervalSeconds\x12'\n" +
 	"\x0ftimeout_seconds\x18\x06 \x01(\x05R\x0etimeoutSeconds\x12\x18\n" +
 	"\aretries\x18\a \x01(\x05R\aretries\x120\n" +
-	"\x14start_period_seconds\x18\b \x01(\x05R\x12startPeriodSeconds\"\x9b\x01\n" +
+	"\x14start_period_seconds\x18\b \x01(\x05R\x12startPeriodSeconds\"\x83\x02\n" +
 	"\vVolumeMount\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x1b\n" +
 	"\tread_only\x18\x03 \x01(\bR\breadOnly\x12 \n" +
 	"\vpersistence\x18\x04 \x01(\tR\vpersistence\x12\x1d\n" +
 	"\n" +
-	"size_bytes\x18\x05 \x01(\x03R\tsizeBytes\"\x9e\x01\n" +
+	"size_bytes\x18\x05 \x01(\x03R\tsizeBytes\x12\x1f\n" +
+	"\vbackup_cron\x18\x06 \x01(\tR\n" +
+	"backupCron\x12#\n" +
+	"\rbackup_retain\x18\a \x01(\x05R\fbackupRetain\x12 \n" +
+	"\fs3_target_id\x18\b \x01(\tR\n" +
+	"s3TargetId\"\x9e\x01\n" +
 	"\tPlacement\x12\x1a\n" +
 	"\bmachines\x18\x01 \x03(\tR\bmachines\x12:\n" +
 	"\x06labels\x18\x02 \x03(\v2\".aetherix.v1.Placement.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xed\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbd\x03\n" +
 	"\tBuildSpec\x12\x18\n" +
 	"\abuilder\x18\x01 \x01(\tR\abuilder\x12\x18\n" +
 	"\acontext\x18\x02 \x01(\tR\acontext\x12\x1e\n" +
@@ -2785,7 +2838,10 @@ const file_aetherix_v1_types_proto_rawDesc = "" +
 	"\x04args\x18\a \x03(\v2 .aetherix.v1.BuildSpec.ArgsEntryR\x04args\x12\x1f\n" +
 	"\vwatch_paths\x18\b \x03(\tR\n" +
 	"watchPaths\x12\x1a\n" +
-	"\bplatform\x18\t \x01(\tR\bplatform\x1a7\n" +
+	"\bplatform\x18\t \x01(\tR\bplatform\x12!\n" +
+	"\fimage_retain\x18\n" +
+	" \x01(\x05R\vimageRetain\x12+\n" +
+	"\x12image_s3_target_id\x18\v \x01(\tR\x0fimageS3TargetId\x1a7\n" +
 	"\tArgsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"u\n" +

@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -259,11 +260,35 @@ func (s *clusterSvc) StartUpgrade(ctx context.Context, req *connect.Request[v1.S
 	if err != nil {
 		return nil, internalErr(err)
 	}
+	machines, err := store.ListMachines(ctx, s.Store)
+	if err != nil {
+		return nil, internalErr(err)
+	}
+	want := map[string]bool{}
+	for _, id := range req.Msg.MachineIds {
+		want[id] = true
+	}
+	var behind []string
+	for _, m := range machines {
+		if len(want) > 0 && !want[m.Id] {
+			continue
+		}
+		if upgrade.Equal(m.AgentVersion, ver) {
+			continue
+		}
+		behind = append(behind, m.Id)
+	}
+	if len(behind) == 0 {
+		if len(want) > 0 {
+			return nil, errInvalid("selected machines are already on %s", ver)
+		}
+		return nil, errInvalid("all machines are already on %s", ver)
+	}
 	if req.Msg.Channel != "" {
 		cfg.Channel = req.Msg.Channel
 	}
 	cfg.DesiredVersion = ver
-	cfg.MachineIDs = append([]string(nil), req.Msg.MachineIds...)
+	cfg.MachineIDs = behind
 	if req.Msg.DownloadBase != "" {
 		cfg.DownloadBase = strings.TrimRight(req.Msg.DownloadBase, "/")
 	}
@@ -273,7 +298,8 @@ func (s *clusterSvc) StartUpgrade(ctx context.Context, req *connect.Request[v1.S
 	}
 	_ = store.PutEvent(ctx, s.Store, &v1.Event{
 		Id: newID(), Type: "cluster.upgrade.started",
-		Message: "upgrade to " + ver + " started", Time: timestamppb.Now(),
+		Message: fmt.Sprintf("upgrade to %s started (%d machine(s))", ver, len(behind)),
+		Time:    timestamppb.Now(),
 	})
 	status, err := s.upgradeStatus(ctx)
 	if err != nil {

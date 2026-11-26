@@ -1,8 +1,10 @@
-// Package backup schedules Docker volume snapshots to S3-compatible storage
-// and restores them when reschedule emits volume.restore_requested.
+// Package backup schedules Docker volume snapshots and cluster settings
+// snapshots to S3-compatible storage, and restores volumes when reschedule
+// emits volume.restore_requested.
 package backup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,12 +13,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/aetherix/aetherixcloud/internal/events"
 	"github.com/aetherix/aetherixcloud/internal/ids"
+	"github.com/aetherix/aetherixcloud/internal/lease"
 	"github.com/aetherix/aetherixcloud/internal/runtime"
+	"github.com/aetherix/aetherixcloud/internal/snapshot"
 	"github.com/aetherix/aetherixcloud/internal/store"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -27,32 +32,39 @@ import (
 )
 
 const (
-	settingID     = "backup/s3"
 	historyPrefix = "backup/run/"
 	Path          = "/api/backups"
 )
 
-// Config is the cluster-wide volume backup settings (stored encrypted-ish in settings).
+// Config is the legacy cluster-wide volume backup settings (backup/s3).
+// Kept for one-shot migration into Target records — prefer Target + per-volume fields.
 type Config struct {
-	Enabled         bool   `json:"enabled"`
-	Endpoint        string `json:"endpoint"`
-	Region          string `json:"region"`
-	Bucket          string `json:"bucket"`
-	AccessKeyID     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key"`
-	Prefix          string `json:"prefix"`
-	PathStyle       bool   `json:"path_style"`
-	// Cron is a 5-field cron (default "0 3 * * *" = 03:00 daily).
-	Cron string `json:"cron"`
-	// ServiceIDs limits backups; empty = every service with backup-restore volumes.
-	ServiceIDs []string `json:"service_ids,omitempty"`
+	Enabled         bool     `json:"enabled"`
+	Endpoint        string   `json:"endpoint"`
+	Region          string   `json:"region"`
+	Bucket          string   `json:"bucket"`
+	AccessKeyID     string   `json:"access_key_id"`
+	SecretAccessKey string   `json:"secret_access_key"`
+	Prefix          string   `json:"prefix"`
+	PathStyle       bool     `json:"path_style"`
+	Cron            string   `json:"cron"`
+	ServiceIDs      []string `json:"service_ids,omitempty"`
+}
+
+func (c Config) S3() S3Config {
+	return S3Config{
+		Endpoint: c.Endpoint, Region: c.Region, Bucket: c.Bucket,
+		AccessKeyID: c.AccessKeyID, SecretAccessKey: c.SecretAccessKey,
+		Prefix: c.Prefix, PathStyle: c.PathStyle,
+	}
 }
 
 // RunRecord is one completed (or failed) backup attempt.
 type RunRecord struct {
 	ID        string    `json:"id"`
-	ServiceID string    `json:"service_id"`
-	Volume    string    `json:"volume"`
+	Kind      string    `json:"kind"` // volume|cluster
+	ServiceID string    `json:"service_id,omitempty"`
+	Volume    string    `json:"volume,omitempty"`
 	Key       string    `json:"key"`
 	Bytes     int64     `json:"bytes"`
 	Status    string    `json:"status"` // ok|error
@@ -67,8 +79,16 @@ type Manager struct {
 	Self     string
 	Logger   *slog.Logger
 	Interval time.Duration // how often we re-check cron (default 1m)
+	// Leases coordinates scheduled backups across nodes (nil = no lease).
+	Leases *lease.Manager
+	// Identity supplies cluster secrets for scheduled .snapshot uploads.
+	Identity func() *snapshot.Identity
 
 	docker *client.Client
+
+	// test hooks (nil in production)
+	testBackupVolume  func(ctx context.Context, serviceID, volume string) error
+	testBackupCluster func(ctx context.Context) error
 }
 
 // NewManager wires a Manager. Runtime may be nil (no-docker mode).
@@ -81,26 +101,6 @@ func NewManager(st store.Store, rt runtime.Runtime, self string, log *slog.Logge
 		m.docker = d.Client()
 	}
 	return m
-}
-
-// GetConfig loads backup settings.
-func GetConfig(ctx context.Context, st store.Store) (Config, error) {
-	c, err := store.GetJSON[Config](ctx, st, store.TableSettings, settingID)
-	if err != nil {
-		if store.IsNotFound(err) {
-			return Config{Cron: "0 3 * * *", PathStyle: true}, nil
-		}
-		return Config{}, err
-	}
-	return *c, nil
-}
-
-// PutConfig saves backup settings.
-func PutConfig(ctx context.Context, st store.Store, c Config) error {
-	if c.Cron == "" {
-		c.Cron = "0 3 * * *"
-	}
-	return store.PutJSON(ctx, st, store.TableSettings, settingID, nil, c)
 }
 
 // ListRuns returns recent backup runs, newest first.
@@ -121,9 +121,11 @@ func ListRuns(ctx context.Context, st store.Store, limit int) ([]RunRecord, erro
 		if json.Unmarshal(r.Data, &rr) != nil {
 			continue
 		}
+		if rr.Kind == "" {
+			rr.Kind = "volume"
+		}
 		out = append(out, rr)
 	}
-	// newest first (ULID / time in At)
 	for i := 0; i < len(out); i++ {
 		for j := i + 1; j < len(out); j++ {
 			if out[j].At.After(out[i].At) {
@@ -142,51 +144,29 @@ func (m *Manager) Run(ctx context.Context) {
 	go m.watchRestores(ctx)
 	t := time.NewTicker(m.Interval)
 	defer t.Stop()
-	var lastFire string // "YYYY-MM-DD-HH-MM" of last cron match
+	lastFire := map[string]string{}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case now := <-t.C:
-			cfg, err := GetConfig(ctx, m.Store)
-			if err != nil || !cfg.Enabled || !cfg.S3().Valid() {
-				continue
-			}
-			slot := now.UTC().Format("2006-01-02-15-04")
-			if slot == lastFire {
-				continue
-			}
-			ok, err := MatchCron(cfg.Cron, now.UTC())
-			if err != nil || !ok {
-				continue
-			}
-			lastFire = slot
-			m.backupDue(ctx, cfg)
+			m.tick(ctx, now.UTC(), lastFire)
 		}
 	}
 }
 
-func (c Config) S3() S3Config {
-	return S3Config{
-		Endpoint: c.Endpoint, Region: c.Region, Bucket: c.Bucket,
-		AccessKeyID: c.AccessKeyID, SecretAccessKey: c.SecretAccessKey,
-		Prefix: c.Prefix, PathStyle: c.PathStyle,
-	}
+func (m *Manager) tick(ctx context.Context, now time.Time, lastFire map[string]string) {
+	m.backupVolumesDue(ctx, now, lastFire)
+	m.backupClusterDue(ctx, now, lastFire)
 }
 
-func (m *Manager) backupDue(ctx context.Context, cfg Config) {
+func (m *Manager) backupVolumesDue(ctx context.Context, now time.Time, lastFire map[string]string) {
 	svcs, err := store.ListServices(ctx, m.Store, nil)
 	if err != nil {
 		return
 	}
-	allow := map[string]bool{}
-	for _, id := range cfg.ServiceIDs {
-		allow[id] = true
-	}
+	slot := now.Format("2006-01-02-15-04")
 	for _, svc := range svcs {
-		if len(allow) > 0 && !allow[svc.Id] {
-			continue
-		}
 		spec := svc.Spec
 		if spec == nil {
 			continue
@@ -195,29 +175,128 @@ func (m *Manager) backupDue(ctx context.Context, cfg Config) {
 			if v.Persistence != "backup-restore" {
 				continue
 			}
-			if err := m.BackupVolume(ctx, cfg, svc.Id, v.Source); err != nil {
+			cronExpr := v.BackupCron
+			if cronExpr == "" {
+				cronExpr = DefaultVolumeCron
+			}
+			fireKey := "vol:" + svc.Id + ":" + v.Source
+			if lastFire[fireKey] == slot {
+				continue
+			}
+			ok, err := MatchCron(cronExpr, now)
+			if err != nil || !ok {
+				continue
+			}
+			lastFire[fireKey] = slot
+			if !m.shouldRunVolumeOnSelf(ctx, svc.Id) {
+				continue
+			}
+			_, err = m.runExclusive(ctx, volumeLeaseName(svc.Id, v.Source), fireKey, slot, func(ctx context.Context) error {
+				return m.runVolumeBackup(ctx, svc.Id, v.Source)
+			})
+			if err != nil {
 				m.Logger.Warn("volume backup failed", "service", svc.Id, "volume", v.Source, "err", err)
 			}
 		}
 	}
 }
 
-// BackupVolume tars a named Docker volume and uploads it to S3. Runs on the
-// node that currently hosts a replica using that volume when possible; if
-// docker is unavailable, records an error run.
-func (m *Manager) BackupVolume(ctx context.Context, cfg Config, serviceID, volume string) error {
-	rec := RunRecord{ID: ids.New(), ServiceID: serviceID, Volume: volume, Status: "ok", At: time.Now().UTC()}
+func (m *Manager) backupClusterDue(ctx context.Context, now time.Time, lastFire map[string]string) {
+	cs, err := GetClusterSchedule(ctx, m.Store)
+	if err != nil || !cs.Enabled {
+		return
+	}
+	slot := now.Format("2006-01-02-15-04")
+	if lastFire["cluster"] == slot {
+		return
+	}
+	ok, err := MatchCron(cs.Cron, now)
+	if err != nil || !ok {
+		return
+	}
+	lastFire["cluster"] = slot
+	_, err = m.runExclusive(ctx, leaseCluster, "cluster", slot, func(ctx context.Context) error {
+		return m.runClusterBackup(ctx)
+	})
+	if err != nil {
+		m.Logger.Warn("cluster snapshot backup failed", "err", err)
+	}
+}
+
+// BackupVolumeMount resolves the volume's S3 target / retain from the service
+// spec and uploads a snapshot.
+func (m *Manager) BackupVolumeMount(ctx context.Context, serviceID, volumeName string) error {
+	s3, retain, err := m.resolveVolumeBackup(ctx, serviceID, volumeName)
+	if err != nil {
+		return err
+	}
+	return m.BackupVolume(ctx, s3, serviceID, volumeName, retain)
+}
+
+func (m *Manager) resolveVolumeBackup(ctx context.Context, serviceID, volumeName string) (S3Config, int, error) {
+	targetID := ""
+	retain := DefaultRetain
+	if svc, err := store.GetService(ctx, m.Store, serviceID); err == nil && svc.Spec != nil {
+		for _, v := range svc.Spec.Volumes {
+			if v.Source != volumeName {
+				continue
+			}
+			targetID = v.S3TargetId
+			if v.BackupRetain > 0 {
+				retain = int(v.BackupRetain)
+			}
+			break
+		}
+	}
+	tgt, err := ResolveTarget(ctx, m.Store, targetID)
+	if err != nil {
+		return S3Config{}, 0, err
+	}
+	if !tgt.S3().Valid() {
+		return S3Config{}, 0, fmt.Errorf("S3 target %q is incomplete", tgt.Name)
+	}
+	return tgt.S3(), retain, nil
+}
+
+// BackupAllVolumesNow snapshots every backup-restore volume once (manual run).
+func (m *Manager) BackupAllVolumesNow(ctx context.Context) {
+	svcs, err := store.ListServices(ctx, m.Store, nil)
+	if err != nil {
+		return
+	}
+	for _, svc := range svcs {
+		if svc.Spec == nil {
+			continue
+		}
+		for _, v := range svc.Spec.Volumes {
+			if v.Persistence != "backup-restore" {
+				continue
+			}
+			if err := m.BackupVolumeMount(ctx, svc.Id, v.Source); err != nil {
+				m.Logger.Warn("volume backup failed", "service", svc.Id, "volume", v.Source, "err", err)
+			}
+		}
+	}
+}
+
+// BackupVolume tars a named Docker volume and uploads it to S3.
+func (m *Manager) BackupVolume(ctx context.Context, s3 S3Config, serviceID, volumeName string, retain int) error {
+	rec := RunRecord{ID: ids.New(), Kind: "volume", ServiceID: serviceID, Volume: volumeName, Status: "ok", At: time.Now().UTC()}
 	defer func() {
 		_ = store.PutJSON(ctx, m.Store, store.TableSettings, historyPrefix+rec.ID, nil, rec)
 		_, _ = events.Emit(ctx, m.Store, "backup."+rec.Status, serviceID,
-			fmt.Sprintf("volume %s backup %s", volume, rec.Status),
-			map[string]string{"volume": volume, "key": rec.Key, "error": rec.Error})
+			fmt.Sprintf("volume %s backup %s", volumeName, rec.Status),
+			map[string]string{"volume": volumeName, "key": rec.Key, "error": rec.Error})
 	}()
 	if m.docker == nil {
 		rec.Status, rec.Error = "error", "no docker runtime on this node"
 		return fmt.Errorf("%s", rec.Error)
 	}
-	key := cfg.S3().key("volumes", serviceID, volume, time.Now().UTC().Format("20060102T150405Z")+".tar.gz")
+	if !s3.Valid() {
+		rec.Status, rec.Error = "error", "S3 target not configured"
+		return fmt.Errorf("%s", rec.Error)
+	}
+	key := s3.key("volumes", serviceID, volumeName, time.Now().UTC().Format("20060102T150405Z")+".tar.gz")
 	rec.Key = key
 
 	tmp, err := os.CreateTemp("", "ax-vol-*.tar.gz")
@@ -228,7 +307,7 @@ func (m *Manager) BackupVolume(ctx context.Context, cfg Config, serviceID, volum
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 
-	if err := m.tarVolume(ctx, volume, tmp); err != nil {
+	if err := m.tarVolume(ctx, volumeName, tmp); err != nil {
 		tmp.Close()
 		rec.Status, rec.Error = "error", err.Error()
 		return err
@@ -249,15 +328,78 @@ func (m *Manager) BackupVolume(ctx context.Context, cfg Config, serviceID, volum
 		return err
 	}
 	defer f.Close()
-	cli := NewClient(cfg.S3())
+	cli := NewClient(s3)
 	if err := cli.PutObject(ctx, key, f, fi.Size(), "application/gzip"); err != nil {
 		rec.Status, rec.Error = "error", err.Error()
 		return err
 	}
+	prefix := s3.key("volumes", serviceID, volumeName) + "/"
+	m.prune(ctx, s3, prefix, retain)
 	return nil
 }
 
-func (m *Manager) tarVolume(ctx context.Context, volume string, w io.Writer) error {
+// BackupCluster encodes a full store snapshot and uploads it to the configured S3 target.
+func (m *Manager) BackupCluster(ctx context.Context) error {
+	cs, err := GetClusterSchedule(ctx, m.Store)
+	if err != nil {
+		return err
+	}
+	tgt, err := ResolveTarget(ctx, m.Store, cs.TargetID)
+	if err != nil {
+		return err
+	}
+	s3 := tgt.S3()
+	if !s3.Valid() {
+		return fmt.Errorf("S3 target incomplete")
+	}
+	var ident *snapshot.Identity
+	if m.Identity != nil {
+		ident = m.Identity()
+	}
+	data, err := snapshot.Encode(ctx, m.Store, ident)
+	if err != nil {
+		return err
+	}
+	rec := RunRecord{ID: ids.New(), Kind: "cluster", Status: "ok", At: time.Now().UTC(), Bytes: int64(len(data))}
+	defer func() {
+		_ = store.PutJSON(ctx, m.Store, store.TableSettings, historyPrefix+rec.ID, nil, rec)
+		_, _ = events.Emit(ctx, m.Store, "backup."+rec.Status, "",
+			fmt.Sprintf("cluster snapshot backup %s", rec.Status),
+			map[string]string{"key": rec.Key, "error": rec.Error, "kind": "cluster"})
+	}()
+	key := s3.key("cluster", time.Now().UTC().Format("20060102T150405Z")+".snapshot")
+	rec.Key = key
+	cli := NewClient(s3)
+	if err := cli.PutObject(ctx, key, bytes.NewReader(data), int64(len(data)), "application/json"); err != nil {
+		rec.Status, rec.Error = "error", err.Error()
+		return err
+	}
+	m.prune(ctx, s3, s3.key("cluster")+"/", cs.Retain)
+	return nil
+}
+
+func (m *Manager) prune(ctx context.Context, s3 S3Config, prefix string, retain int) {
+	if retain <= 0 {
+		retain = DefaultRetain
+	}
+	cli := NewClient(s3)
+	keys, err := cli.ListObjects(ctx, prefix)
+	if err != nil {
+		m.Logger.Warn("backup prune list failed", "prefix", prefix, "err", err)
+		return
+	}
+	sort.Strings(keys)
+	if len(keys) <= retain {
+		return
+	}
+	for _, k := range keys[:len(keys)-retain] {
+		if err := cli.DeleteObject(ctx, k); err != nil {
+			m.Logger.Warn("backup prune delete failed", "key", k, "err", err)
+		}
+	}
+}
+
+func (m *Manager) tarVolume(ctx context.Context, volumeName string, w io.Writer) error {
 	name := "ax-backup-" + ids.New()[:8]
 	resp, err := m.docker.ContainerCreate(ctx, &container.Config{
 		Image:      "alpine:3.20",
@@ -266,7 +408,7 @@ func (m *Manager) tarVolume(ctx context.Context, volume string, w io.Writer) err
 		Labels:     map[string]string{runtime.LabelManaged: "true", "aetherix.backup": "1"},
 	}, &container.HostConfig{
 		AutoRemove: true,
-		Mounts:     []mount.Mount{{Type: mount.TypeVolume, Source: volume, Target: "/data", ReadOnly: true}},
+		Mounts:     []mount.Mount{{Type: mount.TypeVolume, Source: volumeName, Target: "/data", ReadOnly: true}},
 	}, nil, nil, name)
 	if err != nil {
 		if pullErr := m.ensureAlpine(ctx); pullErr == nil {
@@ -275,7 +417,7 @@ func (m *Manager) tarVolume(ctx context.Context, volume string, w io.Writer) err
 				Labels: map[string]string{runtime.LabelManaged: "true"},
 			}, &container.HostConfig{
 				AutoRemove: true,
-				Mounts:     []mount.Mount{{Type: mount.TypeVolume, Source: volume, Target: "/data", ReadOnly: true}},
+				Mounts:     []mount.Mount{{Type: mount.TypeVolume, Source: volumeName, Target: "/data", ReadOnly: true}},
 			}, nil, nil, name)
 		}
 		if err != nil {
@@ -317,32 +459,50 @@ func (m *Manager) watchRestores(ctx context.Context) {
 		if vol == "" {
 			continue
 		}
-		cfg, err := GetConfig(ctx, m.Store)
-		if err != nil || !cfg.S3().Valid() {
+		s3, _, err := m.resolveVolumeBackup(ctx, svc, vol)
+		if err != nil || !s3.Valid() {
+			m.Logger.Warn("volume restore: no S3 target", "service", svc, "volume", vol, "err", err)
 			continue
 		}
-		if err := m.RestoreLatest(ctx, cfg, svc, vol); err != nil {
-			m.Logger.Warn("volume restore failed", "service", svc, "volume", vol, "err", err)
-			_, _ = events.Emit(ctx, m.Store, "backup.restore_error", svc, err.Error(), map[string]string{"volume": vol})
+		key := e.Attributes["key"]
+		var restoreErr error
+		if key != "" {
+			restoreErr = m.RestoreKey(ctx, s3, vol, key)
+		} else {
+			restoreErr = m.RestoreLatest(ctx, s3, svc, vol)
+		}
+		if restoreErr != nil {
+			m.Logger.Warn("volume restore failed", "service", svc, "volume", vol, "err", restoreErr)
+			_, _ = events.Emit(ctx, m.Store, "backup.restore_error", svc, restoreErr.Error(), map[string]string{"volume": vol})
 		} else {
 			_, _ = events.Emit(ctx, m.Store, "backup.restored", svc, fmt.Sprintf("restored volume %s", vol), map[string]string{"volume": vol})
+		}
+		// Manual restores pause the service and pass prev_replicas; reschedule
+		// events leave it empty (replica already gone on the failed node).
+		if prev := e.Attributes["prev_replicas"]; prev != "" && prev != "0" {
+			var n int32
+			if _, scanErr := fmt.Sscanf(prev, "%d", &n); scanErr == nil && n > 0 {
+				if err := resumeService(ctx, m.Store, svc, n); err != nil {
+					m.Logger.Warn("volume restore: resume service failed", "service", svc, "err", err)
+				}
+			}
 		}
 	}
 }
 
 // RestoreLatest finds the newest object for service/volume and extracts it.
-func (m *Manager) RestoreLatest(ctx context.Context, cfg Config, serviceID, volume string) error {
+func (m *Manager) RestoreLatest(ctx context.Context, s3 S3Config, serviceID, volumeName string) error {
 	if m.docker == nil {
 		return fmt.Errorf("no docker runtime")
 	}
-	cli := NewClient(cfg.S3())
-	prefix := cfg.S3().key("volumes", serviceID, volume) + "/"
+	cli := NewClient(s3)
+	prefix := s3.key("volumes", serviceID, volumeName) + "/"
 	keys, err := cli.ListObjects(ctx, prefix)
 	if err != nil {
 		return err
 	}
 	if len(keys) == 0 {
-		return fmt.Errorf("no backups for %s/%s", serviceID, volume)
+		return fmt.Errorf("no backups for %s/%s", serviceID, volumeName)
 	}
 	latest := keys[0]
 	for _, k := range keys[1:] {
@@ -350,21 +510,21 @@ func (m *Manager) RestoreLatest(ctx context.Context, cfg Config, serviceID, volu
 			latest = k
 		}
 	}
-	return m.RestoreKey(ctx, cfg, serviceID, volume, latest)
+	return m.RestoreKey(ctx, s3, volumeName, latest)
 }
 
 // RestoreKey downloads a specific S3 object and extracts it into the named volume.
-func (m *Manager) RestoreKey(ctx context.Context, cfg Config, serviceID, volume, key string) error {
+func (m *Manager) RestoreKey(ctx context.Context, s3 S3Config, volumeName, key string) error {
 	if m.docker == nil {
 		return fmt.Errorf("no docker runtime")
 	}
 	if key == "" {
 		return fmt.Errorf("backup key is required")
 	}
-	if err := m.EnsureVolumeExists(ctx, volume); err != nil {
+	if err := m.EnsureVolumeExists(ctx, volumeName); err != nil {
 		return err
 	}
-	cli := NewClient(cfg.S3())
+	cli := NewClient(s3)
 	rc, err := cli.GetObject(ctx, key)
 	if err != nil {
 		return err
@@ -382,10 +542,10 @@ func (m *Manager) RestoreKey(ctx context.Context, cfg Config, serviceID, volume,
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return m.untarVolume(ctx, volume, tmp.Name())
+	return m.untarVolume(ctx, volumeName, tmp.Name())
 }
 
-func (m *Manager) untarVolume(ctx context.Context, volume, archivePath string) error {
+func (m *Manager) untarVolume(ctx context.Context, volumeName, archivePath string) error {
 	name := "ax-restore-" + ids.New()[:8]
 	abs, _ := filepath.Abs(archivePath)
 	resp, err := m.docker.ContainerCreate(ctx, &container.Config{
@@ -395,7 +555,7 @@ func (m *Manager) untarVolume(ctx context.Context, volume, archivePath string) e
 	}, &container.HostConfig{
 		AutoRemove: true,
 		Mounts: []mount.Mount{
-			{Type: mount.TypeVolume, Source: volume, Target: "/data"},
+			{Type: mount.TypeVolume, Source: volumeName, Target: "/data"},
 			{Type: mount.TypeBind, Source: abs, Target: "/archive.tar.gz", ReadOnly: true},
 		},
 	}, nil, nil, name)
@@ -439,18 +599,19 @@ func (m *Manager) EnsureVolumeExists(ctx context.Context, name string) error {
 
 // --- HTTP API ---
 
-// API serves backup config and history.
+// API serves backup cluster schedule and history.
 type API struct {
 	Store        store.Store
 	Manager      *Manager
 	Authenticate func(*http.Request) error
-	RequireAdmin func(*http.Request) error // optional stricter check
+	RequireAdmin func(*http.Request) error
 }
 
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(Path, a.handleRoot)
 	mux.HandleFunc(Path+"/run", a.handleRun)
+	mux.HandleFunc(Path+"/cluster/run", a.handleClusterRun)
 	mux.HandleFunc(Path+"/restore", a.handleRestore)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if a.Authenticate != nil {
@@ -466,17 +627,18 @@ func (a *API) Handler() http.Handler {
 func (a *API) handleRoot(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		cfg, err := GetConfig(r.Context(), a.Store)
+		cs, err := GetClusterSchedule(r.Context(), a.Store)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		redacted := cfg
-		if redacted.SecretAccessKey != "" {
-			redacted.SecretAccessKey = "••••••••"
-		}
 		runs, _ := ListRuns(r.Context(), a.Store, 30)
-		writeJSON(w, map[string]any{"config": redacted, "runs": runs})
+		targets, _ := ListTargets(r.Context(), a.Store)
+		redacted := make([]Target, len(targets))
+		for i, t := range targets {
+			redacted[i] = t.Redacted()
+		}
+		writeJSON(w, map[string]any{"cluster": cs, "runs": runs, "targets": redacted})
 	case http.MethodPut:
 		if a.RequireAdmin != nil {
 			if err := a.RequireAdmin(r); err != nil {
@@ -484,18 +646,22 @@ func (a *API) handleRoot(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		var cfg Config
-		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		var body struct {
+			Cluster *ClusterSchedule `json:"cluster"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		// Preserve secret if the client sent the redacted placeholder.
-		if cfg.SecretAccessKey == "••••••••" || cfg.SecretAccessKey == "" {
-			if prev, err := GetConfig(r.Context(), a.Store); err == nil {
-				cfg.SecretAccessKey = prev.SecretAccessKey
-			}
+		if body.Cluster == nil {
+			http.Error(w, "cluster required", 400)
+			return
 		}
-		if err := PutConfig(r.Context(), a.Store, cfg); err != nil {
+		if _, err := MatchCron(body.Cluster.Cron, time.Now().UTC()); body.Cluster.Cron != "" && err != nil {
+			http.Error(w, "invalid cron: "+err.Error(), 400)
+			return
+		}
+		if err := PutClusterSchedule(r.Context(), a.Store, *body.Cluster); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -521,21 +687,46 @@ func (a *API) handleRun(w http.ResponseWriter, r *http.Request) {
 		Volume    string `json:"volume"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
-	cfg, err := GetConfig(r.Context(), a.Store)
-	if err != nil || !cfg.S3().Valid() {
-		http.Error(w, "backup not configured", 400)
-		return
-	}
 	if a.Manager == nil {
 		http.Error(w, "backup manager unavailable", 503)
 		return
 	}
 	if body.ServiceID == "" || body.Volume == "" {
-		go a.Manager.backupDue(context.Background(), cfg)
+		go a.Manager.BackupAllVolumesNowExclusive(context.Background())
 		writeJSON(w, map[string]any{"started": true})
 		return
 	}
-	if err := a.Manager.BackupVolume(r.Context(), cfg, body.ServiceID, body.Volume); err != nil {
+	if err := a.Manager.BackupVolumeMountExclusive(r.Context(), body.ServiceID, body.Volume); err != nil {
+		if strings.Contains(err.Error(), "already in progress") {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func (a *API) handleClusterRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if a.RequireAdmin != nil {
+		if err := a.RequireAdmin(r); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
+	if a.Manager == nil {
+		http.Error(w, "backup manager unavailable", 503)
+		return
+	}
+	if err := a.Manager.BackupClusterExclusive(r.Context()); err != nil {
+		if strings.Contains(err.Error(), "already in progress") {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -563,16 +754,10 @@ func (a *API) handleRestore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	cfg, err := GetConfig(r.Context(), a.Store)
-	if err != nil || !cfg.S3().Valid() {
-		http.Error(w, "backup not configured", 400)
-		return
-	}
 	if a.Manager == nil {
 		http.Error(w, "backup manager unavailable", 503)
 		return
 	}
-	// Resolve service/volume from a past run when only run_id is given.
 	if body.RunID != "" && (body.ServiceID == "" || body.Volume == "") {
 		runs, _ := ListRuns(r.Context(), a.Store, 100)
 		for _, rr := range runs {
@@ -589,29 +774,53 @@ func (a *API) handleRestore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "service_id and volume are required (or run_id)", 400)
 		return
 	}
-	// Local docker: restore now. Otherwise emit the same event reschedule uses
-	// so a node that hosts the volume can pick it up.
+	s3, _, err := a.Manager.resolveVolumeBackup(r.Context(), body.ServiceID, body.Volume)
+	if err != nil || !s3.Valid() {
+		http.Error(w, "backup not configured: "+errString(err), 400)
+		return
+	}
+	// Stop the app first so nothing is writing to the volume during untar.
+	prev, err := pauseService(r.Context(), a.Store, body.ServiceID)
+	if err != nil {
+		http.Error(w, "could not stop service before restore: "+err.Error(), 500)
+		return
+	}
 	if a.Manager.docker != nil {
 		var restoreErr error
 		if body.Key != "" {
-			restoreErr = a.Manager.RestoreKey(r.Context(), cfg, body.ServiceID, body.Volume, body.Key)
+			restoreErr = a.Manager.RestoreKey(r.Context(), s3, body.Volume, body.Key)
 		} else {
-			restoreErr = a.Manager.RestoreLatest(r.Context(), cfg, body.ServiceID, body.Volume)
+			restoreErr = a.Manager.RestoreLatest(r.Context(), s3, body.ServiceID, body.Volume)
 		}
+		resumeErr := resumeService(r.Context(), a.Store, body.ServiceID, prev)
 		if restoreErr != nil {
 			http.Error(w, restoreErr.Error(), 500)
+			return
+		}
+		if resumeErr != nil {
+			http.Error(w, "restored but failed to restart service: "+resumeErr.Error(), 500)
 			return
 		}
 		_, _ = events.Emit(r.Context(), a.Store, "backup.restored", body.ServiceID,
 			fmt.Sprintf("restored volume %s", body.Volume),
 			map[string]string{"volume": body.Volume, "key": body.Key})
-		writeJSON(w, map[string]any{"ok": true, "restored": true})
+		writeJSON(w, map[string]any{"ok": true, "restored": true, "paused_replicas": prev})
 		return
 	}
 	_, _ = events.Emit(r.Context(), a.Store, "volume.restore_requested", body.ServiceID,
 		fmt.Sprintf("manual restore of volume %q", body.Volume),
-		map[string]string{"volume": body.Volume, "key": body.Key})
-	writeJSON(w, map[string]any{"ok": true, "queued": true})
+		map[string]string{
+			"volume": body.Volume, "key": body.Key,
+			"prev_replicas": fmt.Sprintf("%d", prev),
+		})
+	writeJSON(w, map[string]any{"ok": true, "queued": true, "paused_replicas": prev})
+}
+
+func errString(err error) string {
+	if err == nil {
+		return "no S3 target"
+	}
+	return err.Error()
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

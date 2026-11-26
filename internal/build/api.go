@@ -27,6 +27,10 @@ const (
 	PlanPath   = "/api/builds/plan"
 	// ImagePath receives a `docker save` stream (ax build --local / ax image push).
 	ImagePath = "/api/builds/image"
+	// ImagesConfigPath is the cluster-wide S3 archive setting for build images.
+	ImagesConfigPath = "/api/build-images"
+	// ConcurrencyConfigPath is max parallel builds per builder (excess stay queued).
+	ConcurrencyConfigPath = "/api/build-concurrency"
 	// ResultPrefix starts the final line of an upload response body.
 	ResultPrefix = "AX-RESULT "
 )
@@ -46,6 +50,8 @@ type API struct {
 	// Authenticate validates a request; nil allows everything. Mesh-internal
 	// calls (plain HTTP, no X-Forwarded-For) are the caller's concern.
 	Authenticate func(r *http.Request) error
+	// RequireAdmin is checked for mutating settings (optional).
+	RequireAdmin func(r *http.Request) error
 	// HTTPClient / PeerURL reach other nodes over the mesh (h2c).
 	HTTPClient *http.Client
 	PeerURL    func(meshIP string) string
@@ -56,9 +62,11 @@ func (a *API) Handlers() map[string]http.Handler {
 	logs := connect.NewServerStreamHandler(aetherixv1connect.LogServiceStreamBuildLogsProcedure, a.streamBuildLogs)
 	return map[string]http.Handler{
 		aetherixv1connect.LogServiceStreamBuildLogsProcedure: a.guard(logs),
-		UploadPath: a.guard(http.HandlerFunc(a.handleUpload)),
-		PlanPath:   a.guard(http.HandlerFunc(a.handlePlan)),
-		ImagePath:  a.guard(http.HandlerFunc(a.handleImage)),
+		UploadPath:       a.guard(http.HandlerFunc(a.handleUpload)),
+		PlanPath:         a.guard(http.HandlerFunc(a.handlePlan)),
+		ImagePath:        a.guard(http.HandlerFunc(a.handleImage)),
+		ImagesConfigPath:       a.guard(http.HandlerFunc(a.handleImagesConfig)),
+	ConcurrencyConfigPath:  a.guard(http.HandlerFunc(a.handleConcurrencyConfig)),
 	}
 }
 
@@ -426,6 +434,72 @@ func MuxOf(m map[string]http.Handler) http.Handler {
 		mux.Handle(p, h)
 	}
 	return mux
+}
+
+func (a *API) handleImagesConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := GetImageArchiveConfig(r.Context(), a.Store)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(cfg)
+	case http.MethodPut:
+		if a.RequireAdmin != nil {
+			if err := a.RequireAdmin(r); err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
+		}
+		var cfg ImageArchiveConfig
+		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if err := PutImageArchiveConfig(r.Context(), a.Store, cfg); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func (a *API) handleConcurrencyConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := GetConcurrencyConfig(r.Context(), a.Store)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(cfg)
+	case http.MethodPut:
+		if a.RequireAdmin != nil {
+			if err := a.RequireAdmin(r); err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
+		}
+		var cfg ConcurrencyConfig
+		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if err := PutConcurrencyConfig(r.Context(), a.Store, cfg); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
 }
 
 // Authenticator returns an Authenticate func: mesh-internal requests (plain

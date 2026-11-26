@@ -58,11 +58,20 @@ func registerAuthHooks(d *daemon.Daemon) {
 		if dp.Reconciler != nil {
 			apiDeps.OnChange = dp.Reconciler.Trigger
 		}
-		// A second, stateless API handler for in-process MCP tool calls: same
-		// handlers and interceptor as the public listener.
+		// In-process handler for MCP tools: Connect RPCs plus hook HTTP APIs
+		// (/api/backups, /api/s3-targets, /api/build-*, …). Skip /mcp so a
+		// tool never recursively hits the MCP endpoint.
 		pub := api.PublicHandler(apiDeps)
+		inner := http.NewServeMux()
+		for p, h := range d.Hooks.Handlers {
+			if p == mcp.Path {
+				continue
+			}
+			inner.Handle(p, h)
+		}
+		inner.Handle("/", pub)
 		oa := oauth.New(dp.Store, authn, dp.Logger)
-		m := mcp.New(mcp.Config{Store: dp.Store, Auth: authn, OAuth: oa, API: func() http.Handler { return pub }, Logger: dp.Logger})
+		m := mcp.New(mcp.Config{Store: dp.Store, Auth: authn, OAuth: oa, API: func() http.Handler { return inner }, Logger: dp.Logger})
 		rt.Store(&authRuntime{oauth: oa, mcp: m})
 
 		if email, pw := os.Getenv("AX_ADMIN_EMAIL"), os.Getenv("AX_ADMIN_PASSWORD"); email != "" && pw != "" {

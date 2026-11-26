@@ -22,6 +22,9 @@ service MachineService {
   rpc RemoveMachine(RemoveMachineRequest) returns (RemoveMachineResponse);
   // ReportHeartbeat is sent over the mesh by every machine (capacity, usage).
   rpc ReportHeartbeat(ReportHeartbeatRequest) returns (ReportHeartbeatResponse);
+  // HostExec opens an interactive host shell (PTY) on a machine. Admin only.
+  // The browser uses /api/host-exec/ws; peers proxy this RPC over the mesh.
+  rpc HostExec(stream HostExecRequest) returns (stream HostExecResponse);
 }
 
 message ListMachinesRequest {}
@@ -123,3 +126,27 @@ message ReportHeartbeatRequest {
   int32 containers = 4;
 }
 message ReportHeartbeatResponse {}
+
+message HostExecStart {
+  string machine_id = 1;  // target machine (id or name)
+  int32 rows = 2;
+  int32 cols = 3;
+}
+message HostExecResize {
+  int32 rows = 1;
+  int32 cols = 2;
+}
+message HostExecRequest {
+  oneof msg {
+    HostExecStart start = 1;
+    bytes stdin = 2;
+    HostExecResize resize = 3;
+  }
+}
+message HostExecResponse {
+  oneof msg {
+    bytes stdout = 1;
+    bytes stderr = 2;
+    int32 exit_code = 3;
+  }
+}

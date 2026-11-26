@@ -50,7 +50,13 @@ func (s *machineSvc) joiner() *cluster.Server {
 
 func (s *machineSvc) CreateJoinToken(ctx context.Context, req *connect.Request[v1.CreateJoinTokenRequest]) (*connect.Response[v1.CreateJoinTokenResponse], error) {
 	ttl := time.Duration(req.Msg.TtlSeconds) * time.Second
-	tok, exp, err := s.joiner().CreateToken(ctx, ttl, req.Msg.Roles, req.Msg.MachineName)
+	roles := req.Msg.Roles
+	if len(roles) == 0 {
+		// Match the UI default; Join still fills worker+ingress if a legacy
+		// empty token somehow arrives.
+		roles = []v1.MachineRole{v1.MachineRole_MACHINE_ROLE_WORKER}
+	}
+	tok, exp, err := s.joiner().CreateToken(ctx, ttl, roles, req.Msg.MachineName)
 	if err != nil {
 		return nil, internalErr(err)
 	}
@@ -85,6 +91,13 @@ func (s *machineSvc) UpdateMachine(ctx context.Context, req *connect.Request[v1.
 		m.Labels = req.Msg.Labels
 	}
 	if req.Msg.SetRoles {
+		ms, err := store.ListMachines(ctx, s.Store)
+		if err != nil {
+			return nil, internalErr(err)
+		}
+		if err := ensureEssentialRoleCoverage(ms, m, req.Msg.Roles); err != nil {
+			return nil, err
+		}
 		m.Roles = req.Msg.Roles
 	}
 	if req.Msg.SetEndpoints {

@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"sort"
+	"time"
 
 	v1 "github.com/aetherix/aetherixcloud/gen/aetherix/v1"
 )
@@ -44,11 +46,33 @@ func GetDeployment(ctx context.Context, s Store, id string) (*v1.Deployment, err
 	return GetProto[v1.Deployment](ctx, s, TableDeployments, id)
 }
 func ListDeployments(ctx context.Context, s Store, serviceID string, limit int) ([]*v1.Deployment, error) {
-	q := Query{OrderBy: "updated_at", Desc: true, Limit: limit}
+	// Prefer id DESC at the SQL layer: deployment IDs are ULIDs, so this is
+	// roughly creation order and keeps LIMIT meaningful. Do not order by the
+	// row's updated_at — marking a prior deployment SUPERSEDED (or any later
+	// status write) bumps updated_at and would float old rows above newer ones.
+	q := Query{OrderBy: "id", Desc: true, Limit: limit}
 	if serviceID != "" {
 		q.Where = map[string]string{"service_id": serviceID}
 	}
-	return ListProto[v1.Deployment](ctx, s, TableDeployments, q)
+	deps, err := ListProto[v1.Deployment](ctx, s, TableDeployments, q)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(deps, func(i, j int) bool {
+		ti, tj := deploymentCreated(deps[i]), deploymentCreated(deps[j])
+		if !ti.Equal(tj) {
+			return ti.After(tj)
+		}
+		return deps[i].Id > deps[j].Id
+	})
+	return deps, nil
+}
+
+func deploymentCreated(d *v1.Deployment) time.Time {
+	if d != nil && d.CreatedAt != nil {
+		return d.CreatedAt.AsTime()
+	}
+	return time.Time{}
 }
 
 func PutReplica(ctx context.Context, s Store, r *v1.Replica) error {

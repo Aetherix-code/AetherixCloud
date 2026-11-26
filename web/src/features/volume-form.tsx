@@ -1,5 +1,8 @@
+import { useQuery } from '@tanstack/react-query'
 import { Field, Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { fetchS3Targets } from '@/lib/extras'
+import { isMock } from '@/lib/api'
 import { PERSISTENCE_HELP, type VolumeDraft } from '@/lib/volumes'
 import { cn } from '@/lib/utils'
 
@@ -11,6 +14,14 @@ export function VolumeFields({ value, onChange, nameHint, className }: {
   className?: string
 }) {
   const set = <K extends keyof VolumeDraft>(k: K, v: VolumeDraft[K]) => onChange({ ...value, [k]: v })
+  const targets = useQuery({
+    queryKey: ['s3-targets'],
+    queryFn: fetchS3Targets,
+    retry: false,
+    enabled: !isMock && value.persistence === 'backup-restore',
+  })
+  const list = targets.data?.targets ?? []
+
   return (
     <div className={cn('space-y-3', className)}>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -33,6 +44,24 @@ export function VolumeFields({ value, onChange, nameHint, className }: {
         </Field>
       </div>
       <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{PERSISTENCE_HELP[value.persistence]}</p>
+      {value.persistence === 'backup-restore' && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="S3 target" hint="Configured under Settings → S3 Targets. Empty = default/first target.">
+            <Select value={value.s3TargetId} onChange={(e) => set('s3TargetId', e.target.value)}>
+              <option value="">Default target</option>
+              {list.map((t) => (
+                <option key={t.id} value={t.id}>{t.name} ({t.bucket})</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Schedule (UTC cron)" hint="5-field cron. Default daily at 03:00.">
+            <Input value={value.backupCron} onChange={(e) => set('backupCron', e.target.value)} placeholder="0 3 * * *" />
+          </Field>
+          <Field label="Retain snapshots" hint="Older objects are pruned after each successful backup.">
+            <Input type="number" min={1} value={value.backupRetain} onChange={(e) => set('backupRetain', Math.max(1, Number(e.target.value) || 7))} />
+          </Field>
+        </div>
+      )}
       <label className="flex items-center gap-2 text-sm">
         <Switch checked={value.readOnly} onCheckedChange={(c) => set('readOnly', c)} aria-label="Read-only mount" />
         Mount read-only

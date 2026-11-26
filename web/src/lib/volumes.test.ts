@@ -21,4 +21,29 @@ describe('volumes', () => {
     expect(volumeFromSpec({ source: 'a', target: '/a' }).persistence).toBe('local')
     expect(volumeToSpec(emptyVolume({ source: 'a', target: '/a', persistence: 'local' })).persistence).toBe('local')
   })
+
+  it('round-trips backup schedule fields for backup-restore volumes', () => {
+    const d = emptyVolume({
+      source: 'pg', target: '/data', persistence: 'backup-restore',
+      backupCron: '15 2 * * *', backupRetain: 3, s3TargetId: 'tgt1',
+    })
+    const spec = volumeToSpec(d)
+    expect(spec.backupCron).toBe('15 2 * * *')
+    expect(spec.backupRetain).toBe(3)
+    expect(spec.s3TargetId).toBe('tgt1')
+    const back = volumeFromSpec(spec)
+    expect(back.backupCron).toBe('15 2 * * *')
+    expect(back.backupRetain).toBe(3)
+    expect(back.s3TargetId).toBe('tgt1')
+  })
+
+  it('clears backup fields when persistence is local', () => {
+    const spec = volumeToSpec(emptyVolume({
+      source: 'a', target: '/a', persistence: 'local',
+      backupCron: '0 1 * * *', backupRetain: 9, s3TargetId: 'x',
+    }))
+    expect(spec.backupCron).toBe('')
+    expect(spec.backupRetain).toBe(0)
+    expect(spec.s3TargetId).toBe('')
+  })
 })

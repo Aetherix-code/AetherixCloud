@@ -70,6 +70,7 @@ func TestPolicyCoversAllProcedures(t *testing.T) {
 	require.Equal(t, auth.LevelAdmin, auth.RuleFor("/aetherix.v1.ServiceService/DeleteService").Level)
 	require.Equal(t, auth.LevelAdmin, auth.RuleFor("/aetherix.v1.ClusterService/Backup").Level)
 	require.Equal(t, auth.LevelAdmin, auth.RuleFor("/aetherix.v1.ClusterService/Restore").Level)
+	require.Equal(t, auth.LevelAdmin, auth.RuleFor("/aetherix.v1.MachineService/HostExec").Level)
 	require.Equal(t, auth.LevelAdmin, auth.RuleFor("/aetherix.v1.GitHubService/SetWebhookUrl").Level)
 	require.Equal(t, auth.LevelAdmin, auth.RuleFor("/aetherix.v1.AuthService/SomethingNew").Level)
 }

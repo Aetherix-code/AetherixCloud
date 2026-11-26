@@ -7,6 +7,7 @@ import (
 
 	v1 "github.com/aetherix/aetherixcloud/gen/aetherix/v1"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestMigrateIdempotent(t *testing.T) {
@@ -67,6 +68,38 @@ func TestOrderLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, l, 2)
 	require.Equal(t, "c", l[0].Id)
+}
+
+// Superseding (or any later Put) an older deployment must not float it above a
+// newer one: ListDeployments is creation-time newest-first, not row updated_at.
+func TestListDeploymentsNewestCreatedFirst(t *testing.T) {
+	s := NewMemory()
+	defer s.Close()
+	ctx := context.Background()
+	old := &v1.Deployment{
+		Id: "01older0000000000000000000", ServiceId: "svc",
+		Status: v1.DeploymentStatus_DEPLOYMENT_STATUS_ACTIVE,
+		CreatedAt: timestamppb.New(time.Now().Add(-24 * time.Hour)),
+	}
+	newDep := &v1.Deployment{
+		Id: "01newer0000000000000000000", ServiceId: "svc",
+		Status: v1.DeploymentStatus_DEPLOYMENT_STATUS_ACTIVE,
+		CreatedAt: timestamppb.New(time.Now().Add(-3 * time.Minute)),
+	}
+	require.NoError(t, PutDeployment(ctx, s, old))
+	time.Sleep(time.Millisecond)
+	require.NoError(t, PutDeployment(ctx, s, newDep))
+	time.Sleep(time.Millisecond)
+	// Simulate reconciler marking the previous deployment superseded after the
+	// new one became active — this bumps store updated_at on the old row.
+	old.Status = v1.DeploymentStatus_DEPLOYMENT_STATUS_SUPERSEDED
+	require.NoError(t, PutDeployment(ctx, s, old))
+
+	l, err := ListDeployments(ctx, s, "svc", 10)
+	require.NoError(t, err)
+	require.Len(t, l, 2)
+	require.Equal(t, newDep.Id, l[0].Id)
+	require.Equal(t, old.Id, l[1].Id)
 }
 
 func TestWatch(t *testing.T) {

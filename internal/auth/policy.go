@@ -60,6 +60,7 @@ var explicit = map[string]Level{
 	"MachineService/DrainMachine":      LevelAdmin,
 	"MachineService/RemoveMachine":     LevelAdmin,
 	"MachineService/ReportHeartbeat":   LevelAdmin,
+	"MachineService/HostExec":          LevelAdmin, // host shell / PTY
 	"ProjectService/DeleteProject":     LevelAdmin,
 	"ProjectService/DeleteEnvironment": LevelAdmin,
 	"ServiceService/DeleteService":     LevelAdmin,

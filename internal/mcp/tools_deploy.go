@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 
@@ -9,12 +10,13 @@ import (
 	v1 "github.com/aetherix/aetherixcloud/gen/aetherix/v1"
 	"github.com/aetherix/aetherixcloud/internal/auth"
 	"github.com/aetherix/aetherixcloud/internal/templates"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func (s *Server) registerDeployTools() {
 	type createServiceIn struct {
 		Project      string            `json:"project" jsonschema:"project name or ID"`
-		Environment  string            `json:"environment,omitempty" jsonschema:"environment name or ID; default production"`
+		Environment  string            `json:"environment,omitempty" jsonschema:"environment name or ID; default \"default\""`
 		Name         string            `json:"name" jsonschema:"service name"`
 		Image        string            `json:"image,omitempty" jsonschema:"container image, e.g. nginx:1.27"`
 		GithubRepo   string            `json:"github_repo,omitempty" jsonschema:"GitHub repo owner/name to build and deploy on push"`
@@ -182,7 +184,7 @@ func (s *Server) registerDeployTools() {
 
 	type setVarsIn struct {
 		Project     string            `json:"project" jsonschema:"project name or ID"`
-		Environment string            `json:"environment,omitempty" jsonschema:"default production"`
+		Environment string            `json:"environment,omitempty" jsonschema:"default \"default\""`
 		Service     string            `json:"service,omitempty" jsonschema:"service name or ID; empty = shared (environment-wide) variables"`
 		Variables   map[string]string `json:"variables,omitempty" jsonschema:"plain variables KEY=value"`
 		Secrets     map[string]string `json:"secrets,omitempty" jsonschema:"secret variables KEY=value; stored encrypted and never shown again"`
@@ -227,6 +229,7 @@ func (s *Server) registerDeployTools() {
 	type addDomainIn struct {
 		ref
 		Hostname string `json:"hostname" jsonschema:"fully qualified domain, e.g. app.example.com"`
+		Port     int    `json:"port,omitempty" jsonschema:"container port (default: first HTTPS/HTTP port on the service)"`
 	}
 	register(s, "add_domain", "Route a custom domain to a service (TLS certificates are issued automatically).", auth.LevelDeploy, write("Add domain", true),
 		func(ctx context.Context, c *call, in addDomainIn) (any, error) {
@@ -234,7 +237,19 @@ func (s *Server) registerDeployTools() {
 			if err != nil {
 				return nil, err
 			}
-			r, err := c.api.Service.AddDomain(ctx, connect.NewRequest(&v1.AddDomainRequest{ServiceId: svc.Id, Hostname: in.Hostname}))
+			port := int32(in.Port)
+			if port <= 0 {
+				for _, p := range svc.Spec.GetPorts() {
+					if p.ContainerPort > 0 {
+						port = p.ContainerPort
+						break
+					}
+				}
+			}
+			if port <= 0 {
+				return nil, errors.New("port is required (service has no ports; pass port=…)")
+			}
+			r, err := c.api.Service.AddDomain(ctx, connect.NewRequest(&v1.AddDomainRequest{ServiceId: svc.Id, Hostname: in.Hostname, Port: port}))
 			if err != nil {
 				return nil, err
 			}
@@ -253,9 +268,152 @@ func (s *Server) registerDeployTools() {
 			return map[string]any{"restarted": svc.Name}, nil
 		})
 
+	type stopIn struct {
+		ref
+		Confirmation
+	}
+	register(s, "stop_service", "Stop a service (scale to 0). Destructive: needs confirm=true.", auth.LevelDeploy, destructive("Stop service"),
+		func(ctx context.Context, c *call, in stopIn) (any, error) {
+			svc, err := c.service(ctx, in.ref)
+			if err != nil {
+				return nil, err
+			}
+			if dry, err := c.gate("stop_service", svc.Id, in.Confirmation, func() (map[string]any, error) {
+				return map[string]any{"action": "stop (scale to 0)", "service": svc.Name, "previous_replicas": svc.Spec.GetReplicas(),
+					"effect": "traffic stops; use start_service or scale_service to bring it back"}, nil
+			}); err != nil || dry != nil {
+				return dry, err
+			}
+			r, err := c.api.Service.ScaleService(ctx, connect.NewRequest(&v1.ScaleServiceRequest{ServiceId: svc.Id, Replicas: 0}))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"executed": true, "service": toAny(redactedService(r.Msg.Service))}, nil
+		})
+
+	type startIn struct {
+		ref
+		Replicas int `json:"replicas,omitempty" jsonschema:"desired replicas (default 1, or previous spec.replicas if > 0)"`
+	}
+	register(s, "start_service", "Start a stopped service (scale up from 0).", auth.LevelDeploy, write("Start service", false),
+		func(ctx context.Context, c *call, in startIn) (any, error) {
+			svc, err := c.service(ctx, in.ref)
+			if err != nil {
+				return nil, err
+			}
+			n := in.Replicas
+			if n <= 0 {
+				n = int(svc.Spec.GetReplicas())
+			}
+			if n <= 0 {
+				n = 1
+			}
+			r, err := c.api.Service.ScaleService(ctx, connect.NewRequest(&v1.ScaleServiceRequest{ServiceId: svc.Id, Replicas: int32(n)}))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"service": toAny(redactedService(r.Msg.Service))}, nil
+		})
+
+	type updateServiceIn struct {
+		ref
+		Spec       json.RawMessage `json:"spec" jsonschema:"ServiceSpec fields to apply (snake_case JSON, same shape as get_service.spec)"`
+		UpdateMask []string        `json:"update_mask,omitempty" jsonschema:"top-level ServiceSpec field names to replace; empty replaces the whole spec"`
+		Redeploy   bool            `json:"redeploy,omitempty" jsonschema:"deploy after updating so changes take effect"`
+	}
+	register(s, "update_service", "Update a service's spec (ports, volumes, resources, health checks, env, placement, …). Env secrets stay redacted on read.",
+		auth.LevelDeploy, write("Update service", true),
+		func(ctx context.Context, c *call, in updateServiceIn) (any, error) {
+			svc, err := c.service(ctx, in.ref)
+			if err != nil {
+				return nil, err
+			}
+			if len(in.Spec) == 0 {
+				return nil, errors.New("spec is required")
+			}
+			spec := &v1.ServiceSpec{}
+			if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(in.Spec, spec); err != nil {
+				return nil, err
+			}
+			r, err := c.api.Service.UpdateService(ctx, connect.NewRequest(&v1.UpdateServiceRequest{
+				ServiceId: svc.Id, Spec: spec, UpdateMask: in.UpdateMask}))
+			if err != nil {
+				return nil, err
+			}
+			out := map[string]any{"service": toAny(redactedService(r.Msg.Service))}
+			if in.Redeploy {
+				d, err := c.api.Deploy.Deploy(ctx, connect.NewRequest(&v1.DeployRequest{ServiceId: svc.Id, Redeploy: true}))
+				if err != nil {
+					return nil, err
+				}
+				out["deployment"] = toAny(redactedDeployment(d.Msg.Deployment))
+			}
+			return out, nil
+		})
+
+	type removeDomainIn struct {
+		DomainID string `json:"domain_id" jsonschema:"domain ID from list_domains / get_service"`
+	}
+	register(s, "remove_domain", "Remove a custom domain from a service.", auth.LevelDeploy, write("Remove domain", true),
+		func(ctx context.Context, c *call, in removeDomainIn) (any, error) {
+			if in.DomainID == "" {
+				return nil, errors.New("domain_id is required")
+			}
+			if _, err := c.api.Service.RemoveDomain(ctx, connect.NewRequest(&v1.RemoveDomainRequest{DomainId: in.DomainID})); err != nil {
+				return nil, err
+			}
+			return map[string]any{"removed": in.DomainID}, nil
+		})
+
+	type cancelDepIn struct {
+		DeploymentID string `json:"deployment_id" jsonschema:"deployment ID to cancel"`
+	}
+	register(s, "cancel_deployment", "Cancel an in-progress deployment.", auth.LevelDeploy, write("Cancel deployment", true),
+		func(ctx context.Context, c *call, in cancelDepIn) (any, error) {
+			if in.DeploymentID == "" {
+				return nil, errors.New("deployment_id is required")
+			}
+			if _, err := c.api.Deploy.CancelDeployment(ctx, connect.NewRequest(&v1.CancelDeploymentRequest{DeploymentId: in.DeploymentID})); err != nil {
+				return nil, err
+			}
+			return map[string]any{"cancelled": in.DeploymentID}, nil
+		})
+
+	type createProjectIn struct {
+		Name string `json:"name" jsonschema:"project name"`
+	}
+	register(s, "create_project", "Create a project (with a default environment).", auth.LevelDeploy, write("Create project", false),
+		func(ctx context.Context, c *call, in createProjectIn) (any, error) {
+			if in.Name == "" {
+				return nil, errors.New("name is required")
+			}
+			r, err := c.api.Project.CreateProject(ctx, connect.NewRequest(&v1.CreateProjectRequest{Name: in.Name}))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"project": toAny(r.Msg.Project), "environment": toAny(r.Msg.Environment)}, nil
+		})
+
+	type simulatePushIn struct {
+		ref
+	}
+	register(s, "simulate_push", "Trigger a build+deploy as if GitHub pushed to the tracked branch (GitHub-backed services).",
+		auth.LevelDeploy, write("Simulate push", false),
+		func(ctx context.Context, c *call, in simulatePushIn) (any, error) {
+			svc, err := c.service(ctx, in.ref)
+			if err != nil {
+				return nil, err
+			}
+			r, err := c.api.GitHub.SimulatePush(ctx, connect.NewRequest(&v1.SimulatePushRequest{ServiceId: svc.Id}))
+			if err != nil {
+				return nil, err
+			}
+			return toAny(r.Msg), nil
+		})
+
 	type composeIn struct {
 		Project     string   `json:"project" jsonschema:"project name or ID"`
-		Environment string   `json:"environment,omitempty" jsonschema:"default production"`
+		Environment string   `json:"environment,omitempty" jsonschema:"default \"default\""`
 		ComposeYAML string   `json:"compose_yaml" jsonschema:"contents of compose.yaml (x-ports, x-machines, ... extensions supported)"`
 		Services    []string `json:"services,omitempty" jsonschema:"only deploy these compose services"`
 		Prune       bool     `json:"prune,omitempty" jsonschema:"remove services that are not in the file (destructive: needs confirmation)"`

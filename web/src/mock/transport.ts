@@ -30,6 +30,9 @@ import {
   type Role,
   type Service,
 } from '@/gen/aetherix/v1/types_pb'
+import { currentReplicas } from '@/lib/replicas'
+import { essentialRoles, isLastRoleHolder } from '@/lib/roles'
+import { roleLabel } from '@/lib/status'
 import { seed, type MockDB } from './data'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -291,7 +294,14 @@ export function createMockTransport(): Transport {
       updateMachine: (r) => {
         const m = mach(r.machine)
         if (r.name !== undefined) m.name = r.name
-        if (r.setRoles) m.roles = r.roles
+        if (r.setRoles) {
+          for (const role of essentialRoles) {
+            if (m.roles.includes(role) && !r.roles.includes(role) && isLastRoleHolder(db.machines, m.id, role)) {
+              throw new ConnectError(`cannot remove the last ${roleLabel[role]} role from the cluster`, Code.FailedPrecondition)
+            }
+          }
+          m.roles = r.roles
+        }
         if (r.setLabels) m.labels = r.labels
         pushAudit({
           action: '/aetherix.v1.MachineService/UpdateMachine',
@@ -393,7 +403,11 @@ export function createMockTransport(): Transport {
       listServices: (r) => ({ services: db.services.filter((s) => !r.project || s.projectId === proj(r.project).id) }),
       getService: (r) => {
         const s = svcOf(r.service)
-        return { service: s, replicas: db.replicas.filter((x) => x.serviceId === s.id), domains: db.domains.filter((d) => d.serviceId === s.id) }
+        return {
+          service: s,
+          replicas: currentReplicas(db.replicas.filter((x) => x.serviceId === s.id)),
+          domains: db.domains.filter((d) => d.serviceId === s.id),
+        }
       },
       createService: (r) => {
         const p = proj(r.project)
@@ -430,7 +444,9 @@ export function createMockTransport(): Transport {
         pushEvent('service.restart', r.serviceId, `${svcOf(r.serviceId).name} restarted`)
         return {}
       },
-      listReplicas: (r) => ({ replicas: db.replicas.filter((x) => (!r.serviceId || x.serviceId === r.serviceId) && (!r.machineId || x.machineId === r.machineId)) }),
+      listReplicas: (r) => ({
+        replicas: currentReplicas(db.replicas.filter((x) => (!r.serviceId || x.serviceId === r.serviceId) && (!r.machineId || x.machineId === r.machineId))),
+      }),
       listDomains: (r) => ({ domains: db.domains.filter((d) => d.serviceId === r.serviceId) }),
       addDomain: (r) => {
         const d = create(DomainSchema, { id: nid('dom'), serviceId: r.serviceId, hostname: r.hostname, port: r.port, tlsState: 'pending', tlsExpiresAt: timestampFromDate(new Date(Date.now() + 86400000 * 90)) })
@@ -452,9 +468,19 @@ export function createMockTransport(): Transport {
       deployCompose: () => ({ services: [], deployments: [], warnings: ['mock: compose deploy is a no-op'], removed: [] }),
       getDeployment: (r) => {
         const d = db.deployments.find((x) => x.id === r.deploymentId) ?? (() => { throw notFound('deployment', r.deploymentId) })()
-        return { deployment: d, replicas: db.replicas.filter((x) => x.deploymentId === d.id) }
+        return { deployment: d, replicas: currentReplicas(db.replicas.filter((x) => x.deploymentId === d.id)) }
       },
-      listDeployments: (r) => ({ deployments: db.deployments.filter((d) => d.serviceId === r.serviceId).slice(0, r.limit || 50) }),
+      listDeployments: (r) => {
+        const deps = db.deployments
+          .filter((d) => d.serviceId === r.serviceId)
+          .sort((a, b) => {
+            const ta = a.createdAt ? Number(a.createdAt.seconds) * 1000 + (a.createdAt.nanos ?? 0) / 1e6 : 0
+            const tb = b.createdAt ? Number(b.createdAt.seconds) * 1000 + (b.createdAt.nanos ?? 0) / 1e6 : 0
+            if (tb !== ta) return tb - ta
+            return a.id < b.id ? 1 : a.id > b.id ? -1 : 0
+          })
+        return { deployments: deps.slice(0, r.limit || 50) }
+      },
       rollback: (r) => {
         const target = db.deployments.find((d) => d.id === r.deploymentId) ?? (() => { throw notFound('deployment', r.deploymentId) })()
         const d = newDeployment(r.serviceId, target.commitSha, `Rollback to ${target.commitSha}`, undefined, target.imageDigest)

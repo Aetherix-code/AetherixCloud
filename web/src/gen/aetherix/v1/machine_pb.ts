@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file aetherix/v1/machine.proto.
  */
 export const file_aetherix_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChlhZXRoZXJpeC92MS9tYWNoaW5lLnByb3RvEgthZXRoZXJpeC52MSIVChNMaXN0TWFjaGluZXNSZXF1ZXN0Ij4KFExpc3RNYWNoaW5lc1Jlc3BvbnNlEiYKCG1hY2hpbmVzGAEgAygLMhQuYWV0aGVyaXgudjEuTWFjaGluZSIkChFHZXRNYWNoaW5lUmVxdWVzdBIPCgdtYWNoaW5lGAEgASgJIjsKEkdldE1hY2hpbmVSZXNwb25zZRIlCgdtYWNoaW5lGAEgASgLMhQuYWV0aGVyaXgudjEuTWFjaGluZSJsChZDcmVhdGVKb2luVG9rZW5SZXF1ZXN0EhMKC3R0bF9zZWNvbmRzGAEgASgFEicKBXJvbGVzGAIgAygOMhguYWV0aGVyaXgudjEuTWFjaGluZVJvbGUSFAoMbWFjaGluZV9uYW1lGAMgASgJIlcKF0NyZWF0ZUpvaW5Ub2tlblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEhcKD2luc3RhbGxfY29tbWFuZBgCIAEoCRIUCgxleHBpcmVzX3VuaXgYAyABKAMidAoIUGVlckluZm8SEgoKbWFjaGluZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEhIKCnB1YmxpY19rZXkYAyABKAkSEQoJZW5kcG9pbnRzGAQgAygJEg4KBnN1Ym5ldBgFIAEoCRIPCgdtZXNoX2lwGAYgASgJIoACChJKb2luTWFjaGluZVJlcXVlc3QSDQoFdG9rZW4YASABKAkSDAoEbmFtZRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgJEhEKCWVuZHBvaW50cxgEIAMoCRIoCghjYXBhY2l0eRgFIAEoCzIWLmFldGhlcml4LnYxLlJlc291cmNlcxI7CgZsYWJlbHMYBiADKAsyKy5hZXRoZXJpeC52MS5Kb2luTWFjaGluZVJlcXVlc3QuTGFiZWxzRW50cnkSEAoIYXBpX3BvcnQYByABKAUaLQoLTGFiZWxzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASK3AQoTSm9pbk1hY2hpbmVSZXNwb25zZRIlCgdtYWNoaW5lGAEgASgLMhQuYWV0aGVyaXgudjEuTWFjaGluZRIlCgdjbHVzdGVyGAIgASgLMhQuYWV0aGVyaXgudjEuQ2x1c3RlchIkCgVwZWVycxgDIAMoCzIVLmFldGhlcml4LnYxLlBlZXJJbmZvEhcKD3N0b3JlX2Jvb3RzdHJhcBgEIAMoCRITCgtjbHVzdGVyX2tleRgFIAEoCSKrAgoUVXBkYXRlTWFjaGluZVJlcXVlc3QSDwoHbWFjaGluZRgBIAEoCRIRCgRuYW1lGAIgASgJSACIAQESPQoGbGFiZWxzGAMgAygLMi0uYWV0aGVyaXgudjEuVXBkYXRlTWFjaGluZVJlcXVlc3QuTGFiZWxzRW50cnkSEgoKc2V0X2xhYmVscxgEIAEoCBInCgVyb2xlcxgFIAMoDjIYLmFldGhlcml4LnYxLk1hY2hpbmVSb2xlEhEKCXNldF9yb2xlcxgGIAEoCBIRCgllbmRwb2ludHMYByADKAkSFQoNc2V0X2VuZHBvaW50cxgIIAEoCBotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBQgcKBV9uYW1lIj4KFVVwZGF0ZU1hY2hpbmVSZXNwb25zZRIlCgdtYWNoaW5lGAEgASgLMhQuYWV0aGVyaXgudjEuTWFjaGluZSI5ChRDb3Jkb25NYWNoaW5lUmVxdWVzdBIPCgdtYWNoaW5lGAEgASgJEhAKCGNvcmRvbmVkGAIgASgIIj4KFUNvcmRvbk1hY2hpbmVSZXNwb25zZRIlCgdtYWNoaW5lGAEgASgLMhQuYWV0aGVyaXgudjEuTWFjaGluZSImChNEcmFpbk1hY2hpbmVSZXF1ZXN0Eg8KB21hY2hpbmUYASABKAkicwoURHJhaW5NYWNoaW5lUmVzcG9uc2USJQoHbWFjaGluZRgBIAEoCzIULmFldGhlcml4LnYxLk1hY2hpbmUSFgoOcmVwbGljYXNfbW92ZWQYAiABKAUSHAoUc3RyYW5kZWRfc2VydmljZV9pZHMYAyADKAkiNgoUUmVtb3ZlTWFjaGluZVJlcXVlc3QSDwoHbWFjaGluZRgBIAEoCRINCgVmb3JjZRgCIAEoCCIXChVSZW1vdmVNYWNoaW5lUmVzcG9uc2UikAEKFlJlcG9ydEhlYXJ0YmVhdFJlcXVlc3QSEgoKbWFjaGluZV9pZBgBIAEoCRIkCgR1c2VkGAIgASgLMhYuYWV0aGVyaXgudjEuUmVzb3VyY2VzEigKCGNhcGFjaXR5GAMgASgLMhYuYWV0aGVyaXgudjEuUmVzb3VyY2VzEhIKCmNvbnRhaW5lcnMYBCABKAUiGQoXUmVwb3J0SGVhcnRiZWF0UmVzcG9uc2UynwYKDk1hY2hpbmVTZXJ2aWNlElMKDExpc3RNYWNoaW5lcxIgLmFldGhlcml4LnYxLkxpc3RNYWNoaW5lc1JlcXVlc3QaIS5hZXRoZXJpeC52MS5MaXN0TWFjaGluZXNSZXNwb25zZRJNCgpHZXRNYWNoaW5lEh4uYWV0aGVyaXgudjEuR2V0TWFjaGluZVJlcXVlc3QaHy5hZXRoZXJpeC52MS5HZXRNYWNoaW5lUmVzcG9uc2USXAoPQ3JlYXRlSm9pblRva2VuEiMuYWV0aGVyaXgudjEuQ3JlYXRlSm9pblRva2VuUmVxdWVzdBokLmFldGhlcml4LnYxLkNyZWF0ZUpvaW5Ub2tlblJlc3BvbnNlElAKC0pvaW5NYWNoaW5lEh8uYWV0aGVyaXgudjEuSm9pbk1hY2hpbmVSZXF1ZXN0GiAuYWV0aGVyaXgudjEuSm9pbk1hY2hpbmVSZXNwb25zZRJWCg1VcGRhdGVNYWNoaW5lEiEuYWV0aGVyaXgudjEuVXBkYXRlTWFjaGluZVJlcXVlc3QaIi5hZXRoZXJpeC52MS5VcGRhdGVNYWNoaW5lUmVzcG9uc2USVgoNQ29yZG9uTWFjaGluZRIhLmFldGhlcml4LnYxLkNvcmRvbk1hY2hpbmVSZXF1ZXN0GiIuYWV0aGVyaXgudjEuQ29yZG9uTWFjaGluZVJlc3BvbnNlElMKDERyYWluTWFjaGluZRIgLmFldGhlcml4LnYxLkRyYWluTWFjaGluZVJlcXVlc3QaIS5hZXRoZXJpeC52MS5EcmFpbk1hY2hpbmVSZXNwb25zZRJWCg1SZW1vdmVNYWNoaW5lEiEuYWV0aGVyaXgudjEuUmVtb3ZlTWFjaGluZVJlcXVlc3QaIi5hZXRoZXJpeC52MS5SZW1vdmVNYWNoaW5lUmVzcG9uc2USXAoPUmVwb3J0SGVhcnRiZWF0EiMuYWV0aGVyaXgudjEuUmVwb3J0SGVhcnRiZWF0UmVxdWVzdBokLmFldGhlcml4LnYxLlJlcG9ydEhlYXJ0YmVhdFJlc3BvbnNlYgZwcm90bzM", [file_aetherix_v1_types]);
+  fileDesc("ChlhZXRoZXJpeC92MS9tYWNoaW5lLnByb3RvEgthZXRoZXJpeC52MSIVChNMaXN0TWFjaGluZXNSZXF1ZXN0Ij4KFExpc3RNYWNoaW5lc1Jlc3BvbnNlEiYKCG1hY2hpbmVzGAEgAygLMhQuYWV0aGVyaXgudjEuTWFjaGluZSIkChFHZXRNYWNoaW5lUmVxdWVzdBIPCgdtYWNoaW5lGAEgASgJIjsKEkdldE1hY2hpbmVSZXNwb25zZRIlCgdtYWNoaW5lGAEgASgLMhQuYWV0aGVyaXgudjEuTWFjaGluZSJsChZDcmVhdGVKb2luVG9rZW5SZXF1ZXN0EhMKC3R0bF9zZWNvbmRzGAEgASgFEicKBXJvbGVzGAIgAygOMhguYWV0aGVyaXgudjEuTWFjaGluZVJvbGUSFAoMbWFjaGluZV9uYW1lGAMgASgJIlcKF0NyZWF0ZUpvaW5Ub2tlblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEhcKD2luc3RhbGxfY29tbWFuZBgCIAEoCRIUCgxleHBpcmVzX3VuaXgYAyABKAMidAoIUGVlckluZm8SEgoKbWFjaGluZV9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEhIKCnB1YmxpY19rZXkYAyABKAkSEQoJZW5kcG9pbnRzGAQgAygJEg4KBnN1Ym5ldBgFIAEoCRIPCgdtZXNoX2lwGAYgASgJIoACChJKb2luTWFjaGluZVJlcXVlc3QSDQoFdG9rZW4YASABKAkSDAoEbmFtZRgCIAEoCRISCgpwdWJsaWNfa2V5GAMgASgJEhEKCWVuZHBvaW50cxgEIAMoCRIoCghjYXBhY2l0eRgFIAEoCzIWLmFldGhlcml4LnYxLlJlc291cmNlcxI7CgZsYWJlbHMYBiADKAsyKy5hZXRoZXJpeC52MS5Kb2luTWFjaGluZVJlcXVlc3QuTGFiZWxzRW50cnkSEAoIYXBpX3BvcnQYByABKAUaLQoLTGFiZWxzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASK3AQoTSm9pbk1hY2hpbmVSZXNwb25zZRIlCgdtYWNoaW5lGAEgASgLMhQuYWV0aGVyaXgudjEuTWFjaGluZRIlCgdjbHVzdGVyGAIgASgLMhQuYWV0aGVyaXgudjEuQ2x1c3RlchIkCgVwZWVycxgDIAMoCzIVLmFldGhlcml4LnYxLlBlZXJJbmZvEhcKD3N0b3JlX2Jvb3RzdHJhcBgEIAMoCRITCgtjbHVzdGVyX2tleRgFIAEoCSKrAgoUVXBkYXRlTWFjaGluZVJlcXVlc3QSDwoHbWFjaGluZRgBIAEoCRIRCgRuYW1lGAIgASgJSACIAQESPQoGbGFiZWxzGAMgAygLMi0uYWV0aGVyaXgudjEuVXBkYXRlTWFjaGluZVJlcXVlc3QuTGFiZWxzRW50cnkSEgoKc2V0X2xhYmVscxgEIAEoCBInCgVyb2xlcxgFIAMoDjIYLmFldGhlcml4LnYxLk1hY2hpbmVSb2xlEhEKCXNldF9yb2xlcxgGIAEoCBIRCgllbmRwb2ludHMYByADKAkSFQoNc2V0X2VuZHBvaW50cxgIIAEoCBotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBQgcKBV9uYW1lIj4KFVVwZGF0ZU1hY2hpbmVSZXNwb25zZRIlCgdtYWNoaW5lGAEgASgLMhQuYWV0aGVyaXgudjEuTWFjaGluZSI5ChRDb3Jkb25NYWNoaW5lUmVxdWVzdBIPCgdtYWNoaW5lGAEgASgJEhAKCGNvcmRvbmVkGAIgASgIIj4KFUNvcmRvbk1hY2hpbmVSZXNwb25zZRIlCgdtYWNoaW5lGAEgASgLMhQuYWV0aGVyaXgudjEuTWFjaGluZSImChNEcmFpbk1hY2hpbmVSZXF1ZXN0Eg8KB21hY2hpbmUYASABKAkicwoURHJhaW5NYWNoaW5lUmVzcG9uc2USJQoHbWFjaGluZRgBIAEoCzIULmFldGhlcml4LnYxLk1hY2hpbmUSFgoOcmVwbGljYXNfbW92ZWQYAiABKAUSHAoUc3RyYW5kZWRfc2VydmljZV9pZHMYAyADKAkiNgoUUmVtb3ZlTWFjaGluZVJlcXVlc3QSDwoHbWFjaGluZRgBIAEoCRINCgVmb3JjZRgCIAEoCCIXChVSZW1vdmVNYWNoaW5lUmVzcG9uc2UikAEKFlJlcG9ydEhlYXJ0YmVhdFJlcXVlc3QSEgoKbWFjaGluZV9pZBgBIAEoCRIkCgR1c2VkGAIgASgLMhYuYWV0aGVyaXgudjEuUmVzb3VyY2VzEigKCGNhcGFjaXR5GAMgASgLMhYuYWV0aGVyaXgudjEuUmVzb3VyY2VzEhIKCmNvbnRhaW5lcnMYBCABKAUiGQoXUmVwb3J0SGVhcnRiZWF0UmVzcG9uc2UiPwoNSG9zdEV4ZWNTdGFydBISCgptYWNoaW5lX2lkGAEgASgJEgwKBHJvd3MYAiABKAUSDAoEY29scxgDIAEoBSIsCg5Ib3N0RXhlY1Jlc2l6ZRIMCgRyb3dzGAEgASgFEgwKBGNvbHMYAiABKAUihQEKD0hvc3RFeGVjUmVxdWVzdBIrCgVzdGFydBgBIAEoCzIaLmFldGhlcml4LnYxLkhvc3RFeGVjU3RhcnRIABIPCgVzdGRpbhgCIAEoDEgAEi0KBnJlc2l6ZRgDIAEoCzIbLmFldGhlcml4LnYxLkhvc3RFeGVjUmVzaXplSABCBQoDbXNnIlIKEEhvc3RFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASEwoJZXhpdF9jb2RlGAMgASgFSABCBQoDbXNnMuwGCg5NYWNoaW5lU2VydmljZRJTCgxMaXN0TWFjaGluZXMSIC5hZXRoZXJpeC52MS5MaXN0TWFjaGluZXNSZXF1ZXN0GiEuYWV0aGVyaXgudjEuTGlzdE1hY2hpbmVzUmVzcG9uc2USTQoKR2V0TWFjaGluZRIeLmFldGhlcml4LnYxLkdldE1hY2hpbmVSZXF1ZXN0Gh8uYWV0aGVyaXgudjEuR2V0TWFjaGluZVJlc3BvbnNlElwKD0NyZWF0ZUpvaW5Ub2tlbhIjLmFldGhlcml4LnYxLkNyZWF0ZUpvaW5Ub2tlblJlcXVlc3QaJC5hZXRoZXJpeC52MS5DcmVhdGVKb2luVG9rZW5SZXNwb25zZRJQCgtKb2luTWFjaGluZRIfLmFldGhlcml4LnYxLkpvaW5NYWNoaW5lUmVxdWVzdBogLmFldGhlcml4LnYxLkpvaW5NYWNoaW5lUmVzcG9uc2USVgoNVXBkYXRlTWFjaGluZRIhLmFldGhlcml4LnYxLlVwZGF0ZU1hY2hpbmVSZXF1ZXN0GiIuYWV0aGVyaXgudjEuVXBkYXRlTWFjaGluZVJlc3BvbnNlElYKDUNvcmRvbk1hY2hpbmUSIS5hZXRoZXJpeC52MS5Db3Jkb25NYWNoaW5lUmVxdWVzdBoiLmFldGhlcml4LnYxLkNvcmRvbk1hY2hpbmVSZXNwb25zZRJTCgxEcmFpbk1hY2hpbmUSIC5hZXRoZXJpeC52MS5EcmFpbk1hY2hpbmVSZXF1ZXN0GiEuYWV0aGVyaXgudjEuRHJhaW5NYWNoaW5lUmVzcG9uc2USVgoNUmVtb3ZlTWFjaGluZRIhLmFldGhlcml4LnYxLlJlbW92ZU1hY2hpbmVSZXF1ZXN0GiIuYWV0aGVyaXgudjEuUmVtb3ZlTWFjaGluZVJlc3BvbnNlElwKD1JlcG9ydEhlYXJ0YmVhdBIjLmFldGhlcml4LnYxLlJlcG9ydEhlYXJ0YmVhdFJlcXVlc3QaJC5hZXRoZXJpeC52MS5SZXBvcnRIZWFydGJlYXRSZXNwb25zZRJLCghIb3N0RXhlYxIcLmFldGhlcml4LnYxLkhvc3RFeGVjUmVxdWVzdBodLmFldGhlcml4LnYxLkhvc3RFeGVjUmVzcG9uc2UoATABYgZwcm90bzM", [file_aetherix_v1_types]);
 
 /**
  * @generated from message aetherix.v1.ListMachinesRequest
@@ -511,6 +511,127 @@ export const ReportHeartbeatResponseSchema: GenMessage<ReportHeartbeatResponse> 
   messageDesc(file_aetherix_v1_machine, 18);
 
 /**
+ * @generated from message aetherix.v1.HostExecStart
+ */
+export type HostExecStart = Message<"aetherix.v1.HostExecStart"> & {
+  /**
+   * target machine (id or name)
+   *
+   * @generated from field: string machine_id = 1;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: int32 rows = 2;
+   */
+  rows: number;
+
+  /**
+   * @generated from field: int32 cols = 3;
+   */
+  cols: number;
+};
+
+/**
+ * Describes the message aetherix.v1.HostExecStart.
+ * Use `create(HostExecStartSchema)` to create a new message.
+ */
+export const HostExecStartSchema: GenMessage<HostExecStart> = /*@__PURE__*/
+  messageDesc(file_aetherix_v1_machine, 19);
+
+/**
+ * @generated from message aetherix.v1.HostExecResize
+ */
+export type HostExecResize = Message<"aetherix.v1.HostExecResize"> & {
+  /**
+   * @generated from field: int32 rows = 1;
+   */
+  rows: number;
+
+  /**
+   * @generated from field: int32 cols = 2;
+   */
+  cols: number;
+};
+
+/**
+ * Describes the message aetherix.v1.HostExecResize.
+ * Use `create(HostExecResizeSchema)` to create a new message.
+ */
+export const HostExecResizeSchema: GenMessage<HostExecResize> = /*@__PURE__*/
+  messageDesc(file_aetherix_v1_machine, 20);
+
+/**
+ * @generated from message aetherix.v1.HostExecRequest
+ */
+export type HostExecRequest = Message<"aetherix.v1.HostExecRequest"> & {
+  /**
+   * @generated from oneof aetherix.v1.HostExecRequest.msg
+   */
+  msg: {
+    /**
+     * @generated from field: aetherix.v1.HostExecStart start = 1;
+     */
+    value: HostExecStart;
+    case: "start";
+  } | {
+    /**
+     * @generated from field: bytes stdin = 2;
+     */
+    value: Uint8Array;
+    case: "stdin";
+  } | {
+    /**
+     * @generated from field: aetherix.v1.HostExecResize resize = 3;
+     */
+    value: HostExecResize;
+    case: "resize";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message aetherix.v1.HostExecRequest.
+ * Use `create(HostExecRequestSchema)` to create a new message.
+ */
+export const HostExecRequestSchema: GenMessage<HostExecRequest> = /*@__PURE__*/
+  messageDesc(file_aetherix_v1_machine, 21);
+
+/**
+ * @generated from message aetherix.v1.HostExecResponse
+ */
+export type HostExecResponse = Message<"aetherix.v1.HostExecResponse"> & {
+  /**
+   * @generated from oneof aetherix.v1.HostExecResponse.msg
+   */
+  msg: {
+    /**
+     * @generated from field: bytes stdout = 1;
+     */
+    value: Uint8Array;
+    case: "stdout";
+  } | {
+    /**
+     * @generated from field: bytes stderr = 2;
+     */
+    value: Uint8Array;
+    case: "stderr";
+  } | {
+    /**
+     * @generated from field: int32 exit_code = 3;
+     */
+    value: number;
+    case: "exitCode";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message aetherix.v1.HostExecResponse.
+ * Use `create(HostExecResponseSchema)` to create a new message.
+ */
+export const HostExecResponseSchema: GenMessage<HostExecResponse> = /*@__PURE__*/
+  messageDesc(file_aetherix_v1_machine, 22);
+
+/**
  * @generated from service aetherix.v1.MachineService
  */
 export const MachineService: GenService<{
@@ -597,6 +718,17 @@ export const MachineService: GenService<{
     methodKind: "unary";
     input: typeof ReportHeartbeatRequestSchema;
     output: typeof ReportHeartbeatResponseSchema;
+  },
+  /**
+   * HostExec opens an interactive host shell (PTY) on a machine. Admin only.
+   * The browser uses /api/host-exec/ws; peers proxy this RPC over the mesh.
+   *
+   * @generated from rpc aetherix.v1.MachineService.HostExec
+   */
+  hostExec: {
+    methodKind: "bidi_streaming";
+    input: typeof HostExecRequestSchema;
+    output: typeof HostExecResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_aetherix_v1_machine, 0);

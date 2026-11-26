@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowUpCircle, Bot, Check, Copy, Download, RotateCcw, Trash2, Upload, UserPlus } from 'lucide-react'
+import { ArrowUpCircle, Bot, Check, Copy, Download, Pencil, Plus, RotateCcw, Trash2, Upload, UserPlus } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { Page, PageHeader } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,7 +13,12 @@ import { toast } from '@/components/ui/toast'
 import { Role } from '@/gen/aetherix/v1/types_pb'
 import { api, errMessage, isMock, isUnimplemented } from '@/lib/api'
 import { Checkbox, CheckboxField } from '@/components/ui/checkbox'
-import { fetchBackups, restoreBackup, restoreClusterSnapshot, runBackupNow, saveBackups, type BackupConfig, type BackupRun } from '@/lib/extras'
+import {
+  createS3Target, deleteS3Target, fetchBackups, fetchBuildImageArchive, fetchS3Targets,
+  restoreBackup, restoreClusterSnapshot, runBackupNow, runClusterBackupNow,
+  saveBuildImageArchive, saveClusterBackupSchedule, updateS3Target,
+  type BackupRun, type BuildImageArchiveConfig, type ClusterBackupSchedule, type S3Target,
+} from '@/lib/extras'
 import { keys, useAction, useGithubApp, useGrants, useStatus, useTokens, useUsers } from '@/lib/queries'
 import { userRoleLabel } from '@/lib/status'
 import { copy, formatBytes, timeAgo, tsDate } from '@/lib/utils'
@@ -256,6 +262,138 @@ export function AgentsSettings() {
   )
 }
 
+// ---------------------------------------------------------------- S3 Targets
+const emptyTarget = (): Omit<S3Target, 'id' | 'created_at'> => ({
+  name: '', endpoint: '', region: 'us-east-1', bucket: '', access_key_id: '',
+  secret_access_key: '', prefix: 'aetherix/', path_style: true,
+})
+
+export function S3TargetsSettings() {
+  const q = useQuery({ queryKey: ['s3-targets'], queryFn: fetchS3Targets, retry: false, enabled: !isMock })
+  const imgQ = useQuery({ queryKey: ['build-images'], queryFn: fetchBuildImageArchive, retry: false, enabled: !isMock })
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<S3Target | null>(null)
+  const [form, setForm] = useState(emptyTarget())
+  const [img, setImg] = useState<BuildImageArchiveConfig>({ enabled: false, target_id: '', retain: 5 })
+  useEffect(() => {
+    if (imgQ.data) setImg({ ...imgQ.data })
+  }, [imgQ.data])
+
+  function startCreate() {
+    setEditing(null)
+    setForm(emptyTarget())
+    setOpen(true)
+  }
+  function startEdit(t: S3Target) {
+    setEditing(t)
+    setForm({
+      name: t.name, endpoint: t.endpoint, region: t.region || 'us-east-1', bucket: t.bucket,
+      access_key_id: t.access_key_id, secret_access_key: t.secret_access_key || '••••••••',
+      prefix: t.prefix || 'aetherix/', path_style: t.path_style,
+    })
+    setOpen(true)
+  }
+
+  const save = useAction(
+    async () => {
+      if (editing) await updateS3Target(editing.id, form)
+      else await createS3Target(form)
+    },
+    { invalidate: [['s3-targets'], ['backups']], success: editing ? 'Target updated' : 'Target created', onSuccess: () => setOpen(false) },
+  )
+  const del = useAction((id: string) => deleteS3Target(id), { invalidate: [['s3-targets'], ['backups']], success: 'Target removed' })
+  const saveImg = useAction(() => saveBuildImageArchive(img), { invalidate: [['build-images']], success: 'Build image settings saved' })
+  const list = q.data?.targets ?? []
+
+  return (
+    <Page>
+      <PageHeader
+        title="S3 Targets"
+        hideTitle
+        description="Named S3-compatible destinations for volume backups, cluster snapshots, and optional build-image archives."
+        actions={!q.isError ? <Button onClick={startCreate}><Plus />Add target</Button> : undefined}
+      />
+      <div className="space-y-4">
+        {q.isLoading ? <ListSkeleton /> : q.isError ? (
+          <p className="text-sm text-muted-foreground">S3 targets API unavailable on this node.</p>
+        ) : !(q.data?.targets.length) ? (
+          <Empty title="No S3 targets">
+            <p className="mb-3">Add MinIO, AWS S3, R2, or any S3-compatible endpoint.</p>
+            <Button onClick={startCreate}><Plus />Add target</Button>
+          </Empty>
+        ) : (
+          <Card className="divide-y">
+            {q.data!.targets.map((t) => (
+              <div key={t.id} className="flex items-center gap-3 p-3 text-sm">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">{t.name}</div>
+                  <div className="truncate text-xs text-muted-foreground">{t.endpoint} · {t.bucket}{t.prefix ? ` / ${t.prefix}` : ''}</div>
+                </div>
+                <Button variant="ghost" size="icon" aria-label={`Edit ${t.name}`} onClick={() => startEdit(t)}><Pencil /></Button>
+                <Button variant="ghost" size="icon" aria-label={`Remove ${t.name}`} onClick={() => { if (confirm(`Remove target “${t.name}”?`)) del.mutate(t.id) }}><Trash2 /></Button>
+              </div>
+            ))}
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Build images</CardTitle>
+            <CardDescription>
+              Cluster-wide: after each successful build, archive the image to S3 and prune older local registry tags.
+              Keeps disk usage down on builders while retaining recent images for rollback. The currently deployed image stays local.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {imgQ.isError ? <p className="text-sm text-muted-foreground">Build image settings unavailable on this node.</p> : (
+              <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); saveImg.mutate(undefined) }}>
+                <CheckboxField checked={img.enabled} onCheckedChange={(on) => setImg({ ...img, enabled: on })}>
+                  Archive build images to S3
+                </CheckboxField>
+                {img.enabled && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="S3 target">
+                      <Select value={img.target_id} onChange={(e) => setImg({ ...img, target_id: e.target.value })}>
+                        <option value="">Default target</option>
+                        {list.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </Select>
+                    </Field>
+                    <Field label="Retain per app" hint="S3 archives and local tags kept per service.">
+                      <Input type="number" min={1} value={img.retain} onChange={(e) => setImg({ ...img, retain: Math.max(1, Number(e.target.value) || 5) })} />
+                    </Field>
+                  </div>
+                )}
+                <Button type="submit" size="sm" disabled={saveImg.isPending}>Save</Button>
+              </form>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader title={editing ? 'Edit S3 target' : 'Add S3 target'} />
+          <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }}>
+            <Field label="Name"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Primary MinIO" /></Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Endpoint"><Input required value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })} placeholder="https://s3.amazonaws.com" /></Field>
+              <Field label="Region"><Input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} /></Field>
+              <Field label="Bucket"><Input required value={form.bucket} onChange={(e) => setForm({ ...form, bucket: e.target.value })} /></Field>
+              <Field label="Prefix"><Input value={form.prefix} onChange={(e) => setForm({ ...form, prefix: e.target.value })} /></Field>
+              <Field label="Access key"><Input required value={form.access_key_id} onChange={(e) => setForm({ ...form, access_key_id: e.target.value })} autoComplete="off" /></Field>
+              <Field label="Secret key"><Input type="password" required={!editing} value={form.secret_access_key} onChange={(e) => setForm({ ...form, secret_access_key: e.target.value })} autoComplete="off" /></Field>
+            </div>
+            <CheckboxField checked={form.path_style} onCheckedChange={(on) => setForm({ ...form, path_style: on })}>Path-style URLs (MinIO)</CheckboxField>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save'}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </Page>
+  )
+}
+
 // ---------------------------------------------------------------- Backups
 export function BackupsSettings() {
   const [busy, setBusy] = useState(false)
@@ -263,9 +401,8 @@ export function BackupsSettings() {
   const [snapFile, setSnapFile] = useState<File | null>(null)
   const [confirmText, setConfirmText] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
-  const [cfg, setCfg] = useState<BackupConfig>({
-    enabled: false, endpoint: '', region: 'us-east-1', bucket: '', access_key_id: '',
-    secret_access_key: '', prefix: 'aetherix/', path_style: true, cron: '0 3 * * *',
+  const [cluster, setCluster] = useState<ClusterBackupSchedule>({
+    enabled: false, target_id: '', cron: '0 4 * * *', retain: 14,
   })
   const vol = useQuery({
     queryKey: ['backups'],
@@ -274,7 +411,7 @@ export function BackupsSettings() {
     enabled: !isMock,
   })
   useEffect(() => {
-    if (vol.data?.config) setCfg({ ...vol.data.config })
+    if (vol.data?.cluster) setCluster({ ...vol.data.cluster })
   }, [vol.data])
 
   async function download() {
@@ -299,8 +436,6 @@ export function BackupsSettings() {
     if (!snapFile) return
     setBusy(true)
     try {
-      // Plain POST — Connect client-streaming uses ReadableStream bodies, which
-      // browsers reject ("fetch API does not support streaming request bodies").
       const res = await restoreClusterSnapshot(snapFile, true)
       toast.success(`Restored ${res.rows} rows (${res.machines_removed} machines removed)`)
       setSnapFile(null)
@@ -312,8 +447,9 @@ export function BackupsSettings() {
     }
   }
 
-  const save = useAction(() => saveBackups(cfg), { invalidate: [['backups']], success: 'Backup settings saved' })
-  const runNow = useAction(() => runBackupNow(), { invalidate: [['backups']], success: 'Backup started' })
+  const save = useAction(() => saveClusterBackupSchedule(cluster), { invalidate: [['backups']], success: 'Cluster backup schedule saved' })
+  const runVolumes = useAction(() => runBackupNow(), { invalidate: [['backups']], success: 'Volume backups started' })
+  const runCluster = useAction(() => runClusterBackupNow(), { invalidate: [['backups']], success: 'Cluster snapshot uploaded' })
   const restore = useAction(
     () => restoreBackup({ run_id: restoreRun!.id, service_id: restoreRun!.service_id, volume: restoreRun!.volume, key: restoreRun!.key }),
     {
@@ -323,19 +459,24 @@ export function BackupsSettings() {
     },
   )
 
-  const okRuns = (vol.data?.runs ?? []).filter((r) => r.status === 'ok' && r.key)
+  const targets = vol.data?.targets ?? []
+  const okVolumeRuns = (vol.data?.runs ?? []).filter((r) => r.status === 'ok' && r.key && (r.kind ?? 'volume') === 'volume')
   const confirmOk = confirmText.trim().toLowerCase() === 'destroy cluster state'
 
   return (
     <Page>
-      <PageHeader title="Backups" hideTitle description="Export a cluster snapshot or configure S3 volume backups. Restores are privileged mutations and appear in the Audit log." />
+      <PageHeader
+        title="Backups"
+        hideTitle
+        description="Manual cluster export/restore, scheduled cluster snapshots to S3, and volume backup history. Configure destinations under S3 Targets; per-volume schedule and retain live on each service volume."
+      />
       <div className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Cluster snapshot</CardTitle>
             <CardDescription>
               Download or restore the replicated store (same as <code>ax cluster backup</code> / <code>ax cluster restore</code>).
-              Volume data on disk is not included — use S3 volume backups below.
+              Volume data on disk is not included.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
@@ -348,41 +489,74 @@ export function BackupsSettings() {
             }} />
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
-            <CardTitle>Volume backups (S3)</CardTitle>
-            <CardDescription>Scheduled tar.gz snapshots of volumes marked <code>backup-restore</code>, used when rescheduling after a node failure.</CardDescription>
+            <CardTitle>Scheduled cluster backup</CardTitle>
+            <CardDescription>
+              Upload a full <code>.snapshot</code> (including identity secrets) to an S3 target on a cron.
+              Manage destinations in{' '}
+              <Link to="/settings/s3-targets" className="text-primary underline-offset-2 hover:underline">S3 Targets</Link>.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {vol.isError ? <p className="text-sm text-muted-foreground">Volume backup API unavailable on this node.</p> : (
+          <CardContent>
+            {vol.isError ? <p className="text-sm text-muted-foreground">Backup API unavailable on this node.</p> : (
               <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }}>
-                <CheckboxField checked={cfg.enabled} onCheckedChange={(on) => setCfg({ ...cfg, enabled: on })}>Enabled</CheckboxField>
+                <CheckboxField checked={cluster.enabled} onCheckedChange={(on) => setCluster({ ...cluster, enabled: on })}>Enabled</CheckboxField>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Endpoint"><Input value={cfg.endpoint} onChange={(e) => setCfg({ ...cfg, endpoint: e.target.value })} placeholder="https://s3.amazonaws.com" /></Field>
-                  <Field label="Region"><Input value={cfg.region} onChange={(e) => setCfg({ ...cfg, region: e.target.value })} /></Field>
-                  <Field label="Bucket"><Input value={cfg.bucket} onChange={(e) => setCfg({ ...cfg, bucket: e.target.value })} /></Field>
-                  <Field label="Prefix"><Input value={cfg.prefix} onChange={(e) => setCfg({ ...cfg, prefix: e.target.value })} /></Field>
-                  <Field label="Access key"><Input value={cfg.access_key_id} onChange={(e) => setCfg({ ...cfg, access_key_id: e.target.value })} autoComplete="off" /></Field>
-                  <Field label="Secret key"><Input type="password" value={cfg.secret_access_key} onChange={(e) => setCfg({ ...cfg, secret_access_key: e.target.value })} autoComplete="off" /></Field>
-                  <Field label="Cron (UTC)" hint="5-field; default daily at 03:00"><Input value={cfg.cron} onChange={(e) => setCfg({ ...cfg, cron: e.target.value })} /></Field>
-                  <CheckboxField className="self-end pb-2" checked={cfg.path_style} onCheckedChange={(on) => setCfg({ ...cfg, path_style: on })}>Path-style URLs (MinIO)</CheckboxField>
+                  <Field label="S3 target">
+                    <Select value={cluster.target_id} onChange={(e) => setCluster({ ...cluster, target_id: e.target.value })}>
+                      <option value="">Default target</option>
+                      {targets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Cron (UTC)" hint="5-field; default daily at 04:00">
+                    <Input value={cluster.cron} onChange={(e) => setCluster({ ...cluster, cron: e.target.value })} />
+                  </Field>
+                  <Field label="Retain snapshots">
+                    <Input type="number" min={1} value={cluster.retain} onChange={(e) => setCluster({ ...cluster, retain: Math.max(1, Number(e.target.value) || 14) })} />
+                  </Field>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button type="submit" disabled={save.isPending}>Save</Button>
-                  <Button type="button" variant="secondary" disabled={runNow.isPending || !cfg.enabled} onClick={() => runNow.mutate(undefined)}>Run now</Button>
+                  <Button type="button" variant="secondary" disabled={runCluster.isPending || !targets.length} onClick={() => runCluster.mutate(undefined)}>Upload now</Button>
                 </div>
+                {!targets.length && (
+                  <p className="text-xs text-muted-foreground">
+                    Add an S3 target first — <Link to="/settings/s3-targets" className="text-primary underline-offset-2 hover:underline">Settings → S3 Targets</Link>.
+                  </p>
+                )}
               </form>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Volume backups</CardTitle>
+            <CardDescription>
+              Each volume with policy <code>backup-restore</code> chooses its own S3 target, schedule, and retain count on the service.
+              Recent runs appear below; restore extracts a snapshot into the Docker volume.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" disabled={runVolumes.isPending || !targets.length} onClick={() => runVolumes.mutate(undefined)}>
+                Run all volume backups now
+              </Button>
+            </div>
             {!!vol.data?.runs?.length && (
-              <div className="pt-2">
+              <div className="pt-1">
                 <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent runs</div>
                 <ul className="space-y-1 text-sm">
-                  {vol.data.runs.slice(0, 10).map((r) => (
+                  {vol.data.runs.slice(0, 15).map((r) => (
                     <li key={r.id} className="flex items-center justify-between gap-2 border-b border-border/60 py-1.5">
-                      <span className="truncate">{r.volume} · {r.status}{r.error ? `: ${r.error}` : ''}</span>
+                      <span className="truncate">
+                        {(r.kind ?? 'volume') === 'cluster' ? 'cluster snapshot' : r.volume} · {r.status}{r.error ? `: ${r.error}` : ''}
+                      </span>
                       <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
                         {r.bytes ? formatBytes(r.bytes) : '—'} · {timeAgo(new Date(r.at))}
-                        {r.status === 'ok' && r.key && (
+                        {(r.kind ?? 'volume') === 'volume' && r.status === 'ok' && r.key && (
                           <Button size="sm" variant="outline" className="h-7" onClick={() => setRestoreRun(r)}><RotateCcw className="size-3.5" />Restore</Button>
                         )}
                       </span>
@@ -391,9 +565,9 @@ export function BackupsSettings() {
                 </ul>
               </div>
             )}
-            {!!okRuns.length && (
+            {!!okVolumeRuns.length && (
               <div className="flex justify-end pt-1">
-                <Button size="sm" variant="secondary" onClick={() => setRestoreRun(okRuns[0])}><RotateCcw />Restore latest</Button>
+                <Button size="sm" variant="secondary" onClick={() => setRestoreRun(okVolumeRuns[0])}><RotateCcw />Restore latest volume</Button>
               </div>
             )}
           </CardContent>
@@ -403,7 +577,7 @@ export function BackupsSettings() {
         <DialogContent>
           <DialogHeader
             title="Restore volume backup?"
-            description="This extracts the selected snapshot into the Docker volume. Stop the service first if it is writing to the volume."
+            description="The service will be scaled to zero while the snapshot is extracted into the Docker volume, then scaled back to its previous replica count."
           />
           {restoreRun && (
             <div className="mb-4 space-y-1 text-sm">
@@ -411,11 +585,14 @@ export function BackupsSettings() {
               <div><span className="text-muted-foreground">Service</span> <code>{restoreRun.service_id}</code></div>
               <div className="truncate"><span className="text-muted-foreground">Object</span> <code className="text-xs">{restoreRun.key}</code></div>
               <div><span className="text-muted-foreground">Taken</span> {timeAgo(new Date(restoreRun.at))}</div>
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-950 dark:text-amber-100">
+                Brief downtime: Aetherix stops this app before restore and starts it again afterward.
+              </p>
             </div>
           )}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setRestoreRun(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => restore.mutate(undefined)} disabled={restore.isPending}>{restore.isPending ? 'Restoring…' : 'Restore'}</Button>
+            <Button variant="destructive" onClick={() => restore.mutate(undefined)} disabled={restore.isPending}>{restore.isPending ? 'Stopping & restoring…' : 'Stop app & restore'}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -446,6 +623,12 @@ export function BackupsSettings() {
 }
 
 // ---------------------------------------------------------------- Updates
+function normVer(v?: string) {
+  const s = (v || '').trim().replace(/^V/, '')
+  if (!s || s === '—' || s === 'dev') return s
+  return s.startsWith('v') ? s : (/^\d+\./.test(s) ? `v${s}` : s)
+}
+
 export function UpdatesSettings() {
   const st = useStatus()
   const machines = useQuery({
@@ -473,7 +656,11 @@ export function UpdatesSettings() {
     () => api.cluster.startUpgrade({
       version,
       channel,
-      machineIds: selected,
+      // Empty = all behind; otherwise only selected nodes that are not already on target.
+      machineIds: selected.length ? selected.filter((id) => {
+        const row = rows.find((m) => m.machineId === id)
+        return row && normVer(version) && normVer(row.agentVersion) !== normVer(version)
+      }) : [],
       downloadBase: mirror.trim(),
     }),
     { invalidate: [['upgrade'], keys.machines, keys.status], success: 'Upgrade started — nodes will self-update' },
@@ -484,6 +671,7 @@ export function UpdatesSettings() {
   })
 
   const status = upgrade.data
+  const target = normVer(version || status?.desiredVersion)
   const rows = status?.machines?.length
     ? status.machines
     : (machines.data ?? []).map((m) => ({
@@ -496,6 +684,13 @@ export function UpdatesSettings() {
         onTarget: false,
       }))
 
+  const alreadyOnTarget = (agentVersion?: string) => !!target && normVer(agentVersion) === target
+  const upgradable = rows.filter((m) => !alreadyOnTarget(m.agentVersion))
+  const selectedUpgradable = selected.length
+    ? selected.filter((id) => upgradable.some((m) => m.machineId === id))
+    : upgradable.map((m) => m.machineId)
+  const canUpgrade = !!normVer(version) && selectedUpgradable.length > 0
+
   const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
 
   return (
@@ -503,14 +698,14 @@ export function UpdatesSettings() {
       <PageHeader
         title="Updates"
         hideTitle
-        description="Nodes report their aetherixd version on heartbeat. Set a target release and each machine upgrades itself."
+        description="Each node shows its aetherixd version. Machines already on the target release cannot be upgraded again."
       />
       <div className="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><ArrowUpCircle className="size-4" />Release</CardTitle>
             <CardDescription>
-              Serving {st.data?.version || '—'} from {st.data?.servedBy || '—'}.
+              This API is serving {st.data?.version || '—'} from {st.data?.servedBy || '—'}.
               {status?.desiredVersion ? ` Desired: ${status.desiredVersion} (${status.onTarget}/${status.total} on target).` : ''}
             </CardDescription>
           </CardHeader>
@@ -533,8 +728,8 @@ export function UpdatesSettings() {
               <Button size="sm" variant="secondary" disabled={check.isPending} onClick={() => check.mutate(undefined)}>
                 Check for updates
               </Button>
-              <Button size="sm" disabled={!version || start.isPending} onClick={() => start.mutate(undefined)}>
-                Upgrade {selected.length ? `${selected.length} selected` : 'all machines'}
+              <Button size="sm" disabled={!canUpgrade || start.isPending} onClick={() => start.mutate(undefined)}>
+                Upgrade {selected.length ? `${selectedUpgradable.length} selected` : `${upgradable.length} behind`}
               </Button>
               {!!status?.desiredVersion && (
                 <Button size="sm" variant="ghost" disabled={cancel.isPending} onClick={() => cancel.mutate(undefined)}>
@@ -542,6 +737,9 @@ export function UpdatesSettings() {
                 </Button>
               )}
             </div>
+            {!!target && upgradable.length === 0 && rows.length > 0 && (
+              <p className="text-xs text-muted-foreground">Every machine is already on {target}.</p>
+            )}
             <p className="text-xs text-muted-foreground">
               Prefer downloading a cluster snapshot under Backups before a major upgrade. In local DinD (`AX_DEV`), binaries install then wait for a container restart.
             </p>
@@ -551,7 +749,7 @@ export function UpdatesSettings() {
         <Card>
           <CardHeader>
             <CardTitle>Machines</CardTitle>
-            <CardDescription>Leave selection empty to upgrade every node. Status refreshes every few seconds.</CardDescription>
+            <CardDescription>Version per node from heartbeat. Leave selection empty to upgrade every node that is behind the target.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             {upgrade.isLoading && machines.isLoading ? <div className="p-4"><ListSkeleton rows={3} /></div>
@@ -559,26 +757,33 @@ export function UpdatesSettings() {
                 : (
                   <div className="divide-y">
                     {rows.length === 0 && <p className="p-4 text-sm text-muted-foreground">No machines.</p>}
-                    {rows.map((m) => (
-                      <label key={m.machineId} className="flex cursor-pointer items-center gap-3 p-3 text-sm hover:bg-muted/40">
-                        <Checkbox
-                          checked={selected.includes(m.machineId)}
-                          onCheckedChange={() => toggle(m.machineId)}
-                          aria-label={`Select ${m.machineName}`}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium">{m.machineName}</div>
-                          <div className="truncate font-mono text-xs text-muted-foreground">
-                            {m.agentVersion || '—'}{m.arch ? ` · ${m.arch}` : ''}
-                            {m.upgradeMessage ? ` · ${m.upgradeMessage}` : ''}
+                    {rows.map((m) => {
+                      const current = alreadyOnTarget(m.agentVersion)
+                      const verLabel = m.agentVersion && m.agentVersion !== '—' ? normVer(m.agentVersion) : '—'
+                      return (
+                        <label key={m.machineId} className={`flex items-center gap-3 p-3 text-sm ${current ? 'opacity-60' : 'cursor-pointer hover:bg-muted/40'}`}>
+                          <Checkbox
+                            checked={selected.includes(m.machineId)}
+                            disabled={current}
+                            onCheckedChange={() => !current && toggle(m.machineId)}
+                            aria-label={`Select ${m.machineName}`}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium">{m.machineName}</div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              <span className="font-mono">aetherixd {verLabel}</span>
+                              {m.arch ? ` · ${m.arch}` : ''}
+                              {m.upgradeMessage ? ` · ${m.upgradeMessage}` : ''}
+                            </div>
                           </div>
-                        </div>
-                        {m.onTarget ? <Badge tone="success">on target</Badge>
-                          : m.upgradeStatus ? <Badge tone={m.upgradeStatus === 'failed' ? 'danger' : 'warning'}>{m.upgradeStatus}</Badge>
-                            : status?.desiredVersion ? <Badge tone="warning">behind</Badge>
-                              : <Badge>idle</Badge>}
-                      </label>
-                    ))}
+                          {current ? <Badge tone="success">up to date</Badge>
+                            : m.onTarget ? <Badge tone="success">on target</Badge>
+                              : m.upgradeStatus ? <Badge tone={m.upgradeStatus === 'failed' ? 'danger' : 'warning'}>{m.upgradeStatus}</Badge>
+                                : status?.desiredVersion ? <Badge tone="warning">behind</Badge>
+                                  : <Badge>idle</Badge>}
+                        </label>
+                      )
+                    })}
                   </div>
                 )}
           </CardContent>

@@ -35,6 +35,14 @@ export const replicaTone: Record<ReplicaState, Tone> = {
 export const replicaLabel: Record<ReplicaState, string> = { 0: 'unknown', 1: 'pending', 2: 'starting', 3: 'running', 4: 'stopping', 5: 'stopped', 6: 'failed', 7: 'stranded' }
 
 export const roleLabel: Record<MachineRole, string> = { 0: '?', 1: 'worker', 2: 'ingress', 3: 'builder' }
+
+/** Short explanation shown under each role switch (add-machine / machine page). */
+export const roleDescription: Record<MachineRole, string> = {
+  0: '',
+  1: 'Runs service replicas on this machine.',
+  2: 'Runs Caddy and receives public HTTPS traffic for the cluster.',
+  3: 'May claim build leases and run Docker image builds.',
+}
 export const userRoleLabel: Record<Role, string> = { 0: 'unspecified', 1: 'viewer', 2: 'developer', 3: 'admin', 4: 'owner' }
 
 export const toneDot: Record<Tone, string> = {
@@ -61,9 +69,24 @@ export const DeployBadge = ({ status }: { status: DeploymentStatus }) => (
     {deployLabel[status]}
   </Badge>
 )
-export const ReplicaBadge = ({ state }: { state: ReplicaState }) => (
-  <Badge tone={replicaTone[state]}>
-    <Dot tone={replicaTone[state]} />
-    {replicaLabel[state]}
-  </Badge>
-)
+/** Prefer message-aware label when health is failing (still STARTING in proto). */
+export function replicaDisplay(state: ReplicaState, message?: string): { tone: Tone; label: string } {
+  const msg = (message || '').toLowerCase()
+  if (msg.includes('health check fail')) {
+    return { tone: 'danger', label: msg.includes('giving up') ? 'unhealthy (failed)' : 'unhealthy' }
+  }
+  if (msg.includes('waiting for health')) {
+    return { tone: 'warning', label: 'awaiting health' }
+  }
+  return { tone: replicaTone[state], label: replicaLabel[state] }
+}
+
+export const ReplicaBadge = ({ state, message }: { state: ReplicaState; message?: string }) => {
+  const { tone, label } = replicaDisplay(state, message)
+  return (
+    <Badge tone={tone} title={message || undefined}>
+      <Dot tone={tone} pulse={tone === 'danger' || label === 'awaiting health'} />
+      {label}
+    </Badge>
+  )
+}

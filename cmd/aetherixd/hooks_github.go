@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -32,7 +33,8 @@ import (
 // AX_RAILPACK_FRONTEND, AX_DATA_DIR.
 func hookGitHub(d *daemon.Daemon) {
 	routes := &build.Lazy{}
-	paths := append(github.Paths(), build.UploadPath, build.PlanPath, build.ImagePath, aetherixv1connect.LogServiceStreamBuildLogsProcedure)
+	paths := append(github.Paths(), build.UploadPath, build.PlanPath, build.ImagePath, build.ImagesConfigPath,
+		build.ConcurrencyConfigPath, aetherixv1connect.LogServiceStreamBuildLogsProcedure)
 	for _, p := range paths {
 		d.Hooks.Handlers[p] = routes
 	}
@@ -69,21 +71,55 @@ func runGitHub(ctx context.Context, deps *daemon.Deps, routes *build.Lazy) error
 	worker := &build.Worker{Store: deps.Store, Leases: deps.Leases, Self: self, Pipeline: pipeline, Logs: logs,
 		Source: src, Reporter: &github.Reporter{Module: mod}, Key: key, Logger: deps.Logger, WorkDir: workDir}
 
-	authn := build.Authenticator(build.BearerVerifier(func(ctx context.Context, tok string) error {
-		_, err := auth.Verify(ctx, deps.Store, tok)
+	// Accept session JWTs and API tokens (same as hooks_extras). The old
+	// auth.Verify-only path rejected dashboard JWTs → HTTP 401 on GetApp.
+	authn, err := auth.NewAuthenticator(deps.Store, deps.State.ClusterKey)
+	if err != nil {
 		return err
-	}))
+	}
+	bearer := func(r *http.Request) error {
+		if r.Header.Get("Ax-Proxied") != "" {
+			return nil
+		}
+		tok := auth.BearerFromHeader(r.Header.Get("Authorization"))
+		if tok == "" {
+			// Connect / WS also pass ?token= for browsers.
+			tok = r.URL.Query().Get("token")
+		}
+		if tok == "" {
+			return fmt.Errorf("unauthorized")
+		}
+		_, err := authn.Authenticate(r.Context(), tok)
+		return err
+	}
 	guard := func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if err := authn(r); err != nil {
+			if err := bearer(r); err != nil {
 				http.Error(w, err.Error(), http.StatusUnauthorized)
 				return
 			}
 			h.ServeHTTP(w, r)
 		})
 	}
+	admin := func(r *http.Request) error {
+		tok := auth.BearerFromHeader(r.Header.Get("Authorization"))
+		if tok == "" {
+			tok = r.URL.Query().Get("token")
+		}
+		if tok == "" {
+			return fmt.Errorf("unauthorized")
+		}
+		p, err := authn.Authenticate(r.Context(), tok)
+		if err != nil {
+			return err
+		}
+		if !p.Allows(auth.LevelAdmin) {
+			return fmt.Errorf("admin required")
+		}
+		return nil
+	}
 	bapi := &build.API{Store: deps.Store, Self: self, Worker: worker, Logs: logs, Pipeline: pipeline, Source: src,
-		Authenticate: authn, HTTPClient: api.H2CClient(),
+		Authenticate: bearer, RequireAdmin: admin, HTTPClient: api.H2CClient(),
 		PeerURL: func(ip string) string {
 			return "http://" + net.JoinHostPort(ip, strconv.Itoa(cluster.DefaultMeshAPIPort))
 		}}

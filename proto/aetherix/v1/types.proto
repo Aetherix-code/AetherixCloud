@@ -165,6 +165,13 @@ message VolumeMount {
   // when the named volume is first created. Enforcement requires host quota
   // support (e.g. XFS+pquota); otherwise the value is stored as intent/label.
   int64 size_bytes = 5;
+  // 5-field cron (UTC) for volume snapshots when persistence=backup-restore.
+  // Empty = cluster default ("0 3 * * *").
+  string backup_cron = 6;
+  // How many successful S3 snapshots to keep for this volume. 0 = default (7).
+  int32 backup_retain = 7;
+  // Settings → S3 Targets id. Empty = the default/first target.
+  string s3_target_id = 8;
 }
 
 message Placement {
@@ -185,6 +192,12 @@ message BuildSpec {
   map<string, string> args = 7;
   repeated string watch_paths = 8;
   string platform = 9;
+  // How many successful build images to keep in the S3 archive for this
+  // service. 0 = do not archive. Prunes older objects after each upload.
+  int32 image_retain = 10;
+  // Settings → S3 Targets id used to store docker save archives.
+  // Empty = the default/first target (when image_retain > 0).
+  string image_s3_target_id = 11;
 }
 
 // ServiceSource says where the image comes from.

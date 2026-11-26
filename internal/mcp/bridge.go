@@ -1,10 +1,13 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"connectrpc.com/connect"
@@ -104,6 +107,11 @@ type apiClients struct {
 	Service aetherixv1connect.ServiceServiceClient
 	Deploy  aetherixv1connect.DeployServiceClient
 	Log     aetherixv1connect.LogServiceClient
+	Auth    aetherixv1connect.AuthServiceClient
+	GitHub  aetherixv1connect.GitHubServiceClient
+	http    *http.Client
+	bearer  string
+	client  string
 }
 
 const internalBase = "http://aetherix.internal"
@@ -118,7 +126,55 @@ func (s *Server) newAPI(bearer, client string) *apiClients {
 		Service: aetherixv1connect.NewServiceServiceClient(hc, internalBase, o),
 		Deploy:  aetherixv1connect.NewDeployServiceClient(hc, internalBase, o),
 		Log:     aetherixv1connect.NewLogServiceClient(hc, internalBase, o),
+		Auth:    aetherixv1connect.NewAuthServiceClient(hc, internalBase, o),
+		GitHub:  aetherixv1connect.NewGitHubServiceClient(hc, internalBase, o),
+		http:    hc,
+		bearer:  bearer,
+		client:  client,
 	}
+}
+
+// httpJSON calls a JSON HTTP API path on the same public handler (S3, backups, build settings).
+func (c *call) httpJSON(ctx context.Context, method, path string, body any) (any, error) {
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, internalBase+path, rdr)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.api.bearer)
+	req.Header.Set(auth.InternalHeader, auth.InternalSecret())
+	req.Header.Set(auth.ClientHeader, c.api.client)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	res, err := c.api.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(res.Body, 4<<20))
+	if res.StatusCode >= 400 {
+		msg := strings.TrimSpace(string(raw))
+		if msg == "" {
+			msg = res.Status
+		}
+		return nil, fmt.Errorf("%s %s: %s", method, path, msg)
+	}
+	if len(raw) == 0 || res.StatusCode == http.StatusNoContent {
+		return map[string]any{"ok": true}, nil
+	}
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return map[string]any{"raw": string(raw)}, nil
+	}
+	return out, nil
 }
 
 // toAny converts a protobuf message to a plain JSON value (snake_case names).

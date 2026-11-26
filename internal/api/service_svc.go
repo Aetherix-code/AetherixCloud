@@ -87,7 +87,7 @@ func (s *serviceSvc) GetService(ctx context.Context, req *connect.Request[v1.Get
 	}
 	reps, _ := store.ListReplicas(ctx, s.Store, map[string]string{"service_id": svc.Id})
 	doms, _ := store.ListDomains(ctx, s.Store, svc.Id)
-	return connect.NewResponse(&v1.GetServiceResponse{Service: svc, Replicas: reps, Domains: doms}), nil
+	return connect.NewResponse(&v1.GetServiceResponse{Service: svc, Replicas: visibleReplicas(reps), Domains: doms}), nil
 }
 
 func (s *serviceSvc) ListServices(ctx context.Context, req *connect.Request[v1.ListServicesRequest]) (*connect.Response[v1.ListServicesResponse], error) {
@@ -256,13 +256,20 @@ func (s *serviceSvc) ListReplicas(ctx context.Context, req *connect.Request[v1.L
 	if err != nil {
 		return nil, internalErr(err)
 	}
-	var out []*v1.Replica
-	for _, r := range reps { // hide retired rows
+	return connect.NewResponse(&v1.ListReplicasResponse{Replicas: visibleReplicas(reps)}), nil
+}
+
+// visibleReplicas drops retired rows (desired_running=false and STOPPED).
+// Those linger ~1m for GC after stop/restart/scale-down but must not surface
+// as current replica state in the UI (status badges, replica lists).
+func visibleReplicas(reps []*v1.Replica) []*v1.Replica {
+	out := make([]*v1.Replica, 0, len(reps))
+	for _, r := range reps {
 		if r.DesiredRunning || r.State != v1.ReplicaState_REPLICA_STATE_STOPPED {
 			out = append(out, r)
 		}
 	}
-	return connect.NewResponse(&v1.ListReplicasResponse{Replicas: out}), nil
+	return out
 }
 
 func (s *serviceSvc) ListDomains(ctx context.Context, req *connect.Request[v1.ListDomainsRequest]) (*connect.Response[v1.ListDomainsResponse], error) {

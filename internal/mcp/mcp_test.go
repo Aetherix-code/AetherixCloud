@@ -131,9 +131,12 @@ func TestToolCatalogAnnotationsAndScopeFiltering(t *testing.T) {
 		by[tl.Name] = tl
 	}
 	for _, n := range []string{"list_projects", "list_services", "get_service", "list_deployments", "get_deployment", "get_logs", "get_build_logs",
-		"get_metrics", "list_machines", "get_cluster_status", "list_domains", "list_variables",
-		"create_service", "deploy_service", "redeploy", "rollback", "scale_service", "set_variables", "add_domain", "restart_service", "deploy_compose",
-		"create_join_command", "drain_machine", "cordon_machine", "remove_machine", "delete_service", "delete_project"} {
+		"get_metrics", "list_machines", "get_machine", "get_cluster_status", "list_domains", "list_variables",
+		"get_build_concurrency", "list_s3_targets", "list_backups", "list_api_tokens",
+		"create_service", "deploy_service", "redeploy", "rollback", "scale_service", "set_variables", "add_domain", "restart_service",
+		"stop_service", "start_service", "update_service", "remove_domain", "cancel_deployment", "create_project", "deploy_compose",
+		"create_join_command", "drain_machine", "cordon_machine", "remove_machine", "update_machine", "delete_service", "delete_project",
+		"update_cluster", "create_user", "list_users", "set_build_concurrency", "create_s3_target"} {
 		require.Contains(t, by, n, "tool %s", n)
 		require.NotNil(t, by[n].Annotations, n)
 		require.NotNil(t, by[n].InputSchema, n)
@@ -368,7 +371,7 @@ func TestDeployLifecycleToolsAndDomain(t *testing.T) {
 	e := newEnv(t, nil)
 	e.project(t, "shop")
 	admin := e.connect(t, e.admin)
-	_, res := call(t, admin, "create_service", map[string]any{"project": "shop", "name": "web", "image": "nginx:1.27", "deploy": false})
+	_, res := call(t, admin, "create_service", map[string]any{"project": "shop", "name": "web", "image": "nginx:1.27", "port": 80, "deploy": false})
 	require.False(t, res.IsError, text(res))
 
 	out, res := call(t, admin, "deploy_service", map[string]any{"service": "web", "project": "shop"})

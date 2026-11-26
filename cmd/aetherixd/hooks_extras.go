@@ -18,6 +18,7 @@ import (
 	"github.com/aetherix/aetherixcloud/internal/daemon"
 	"github.com/aetherix/aetherixcloud/internal/metrics"
 	"github.com/aetherix/aetherixcloud/internal/notify"
+	"github.com/aetherix/aetherixcloud/internal/snapshot"
 	"github.com/aetherix/aetherixcloud/internal/store"
 	"github.com/aetherix/aetherixcloud/internal/templates"
 )
@@ -38,6 +39,7 @@ func hookExtras(d *daemon.Daemon) {
 	for _, p := range []string{
 		templates.Path, metrics.Path,
 		backup.Path, backup.Path + "/",
+		backup.TargetsPath, backup.TargetsPath + "/",
 		cron.Path, cron.Path + "/",
 		notify.Path, notify.Path + "/",
 	} {
@@ -109,7 +111,20 @@ func runExtras(ctx context.Context, deps *daemon.Deps, h *atomic.Pointer[http.Ha
 		},
 	}
 	bm := backup.NewManager(deps.Store, deps.Runtime, deps.State.MachineID, deps.Logger)
+	bm.Leases = deps.Leases
+	bm.Identity = func() *snapshot.Identity {
+		if deps.State == nil {
+			return nil
+		}
+		return &snapshot.Identity{
+			ClusterID:  deps.State.ClusterID,
+			ClusterKey: deps.State.ClusterKey,
+			CACertPEM:  deps.State.CACertPEM,
+			CAKeyPEM:   deps.State.CAKeyPEM,
+		}
+	}
 	bapi := &backup.API{Store: deps.Store, Manager: bm, Authenticate: bearer, RequireAdmin: admin}
+	tapi := &backup.TargetsAPI{Store: deps.Store, Authenticate: bearer, RequireAdmin: admin}
 	capi := &cron.API{Store: deps.Store, Authenticate: bearer}
 	napi := &notify.API{Store: deps.Store, Authenticate: bearer}
 
@@ -119,6 +134,8 @@ func runExtras(ctx context.Context, deps *daemon.Deps, h *atomic.Pointer[http.Ha
 			templates.Handler(bearer).ServeHTTP(w, r)
 		case r.URL.Path == metrics.Path || strings.HasPrefix(r.URL.Path, metrics.Path+"/"):
 			mapi.Handler().ServeHTTP(w, r)
+		case r.URL.Path == backup.TargetsPath || strings.HasPrefix(r.URL.Path, backup.TargetsPath+"/"):
+			tapi.Handler().ServeHTTP(w, r)
 		case r.URL.Path == backup.Path || strings.HasPrefix(r.URL.Path, backup.Path+"/"):
 			bapi.Handler().ServeHTTP(w, r)
 		case r.URL.Path == cron.Path || strings.HasPrefix(r.URL.Path, cron.Path+"/"):

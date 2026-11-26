@@ -44,8 +44,9 @@ export async function fetchMetrics(serviceId: string): Promise<MetricsResponse |
   }
 }
 
-export type BackupConfig = {
-  enabled: boolean
+export type S3Target = {
+  id: string
+  name: string
   endpoint: string
   region: string
   bucket: string
@@ -53,12 +54,19 @@ export type BackupConfig = {
   secret_access_key: string
   prefix: string
   path_style: boolean
+  created_at?: string
+}
+
+export type ClusterBackupSchedule = {
+  enabled: boolean
+  target_id: string
   cron: string
-  service_ids?: string[]
+  retain: number
 }
 
 export type BackupRun = {
   id: string
+  kind?: string
   service_id: string
   volume: string
   key: string
@@ -68,16 +76,66 @@ export type BackupRun = {
   at: string
 }
 
-export async function fetchBackups(): Promise<{ config: BackupConfig; runs: BackupRun[] }> {
+export type BuildImageArchiveConfig = {
+  enabled: boolean
+  target_id: string
+  retain: number
+}
+
+export type BuildConcurrencyConfig = {
+  max_parallel: number
+}
+
+export async function fetchBuildImageArchive(): Promise<BuildImageArchiveConfig> {
+  return getJSON('/api/build-images')
+}
+
+export async function saveBuildImageArchive(cfg: Partial<BuildImageArchiveConfig>): Promise<void> {
+  await sendJSON('/api/build-images', 'PUT', cfg)
+}
+
+export async function fetchBuildConcurrency(): Promise<BuildConcurrencyConfig> {
+  return getJSON('/api/build-concurrency')
+}
+
+export async function saveBuildConcurrency(cfg: Partial<BuildConcurrencyConfig>): Promise<void> {
+  await sendJSON('/api/build-concurrency', 'PUT', cfg)
+}
+
+export async function fetchS3Targets(): Promise<{ targets: S3Target[] }> {
+  return getJSON('/api/s3-targets')
+}
+
+export async function createS3Target(body: Partial<S3Target>): Promise<S3Target> {
+  return sendJSON('/api/s3-targets', 'POST', body)
+}
+
+export async function updateS3Target(id: string, body: Partial<S3Target>): Promise<S3Target> {
+  return sendJSON(`/api/s3-targets/${encodeURIComponent(id)}`, 'PUT', body)
+}
+
+export async function deleteS3Target(id: string): Promise<void> {
+  await sendJSON(`/api/s3-targets/${encodeURIComponent(id)}`, 'DELETE')
+}
+
+export async function fetchBackups(): Promise<{
+  cluster: ClusterBackupSchedule
+  runs: BackupRun[]
+  targets: S3Target[]
+}> {
   return getJSON('/api/backups')
 }
 
-export async function saveBackups(config: Partial<BackupConfig>): Promise<void> {
-  await sendJSON('/api/backups', 'PUT', config)
+export async function saveClusterBackupSchedule(cluster: Partial<ClusterBackupSchedule>): Promise<void> {
+  await sendJSON('/api/backups', 'PUT', { cluster })
 }
 
-export async function runBackupNow(): Promise<void> {
-  await sendJSON('/api/backups/run', 'POST', {})
+export async function runBackupNow(body?: { service_id?: string; volume?: string }): Promise<void> {
+  await sendJSON('/api/backups/run', 'POST', body ?? {})
+}
+
+export async function runClusterBackupNow(): Promise<void> {
+  await sendJSON('/api/backups/cluster/run', 'POST', {})
 }
 
 export async function restoreBackup(body: { run_id?: string; service_id?: string; volume?: string; key?: string }): Promise<{ ok: boolean; restored?: boolean; queued?: boolean }> {

@@ -309,3 +309,30 @@ func TestStatusAndEvents(t *testing.T) {
 	require.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
 	_ = http.StatusOK
 }
+
+func TestUpdateMachineLastEssentialRole(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	mc := aetherixv1connect.NewMachineServiceClient(f.mesh.Client(), f.mesh.URL)
+
+	// Bootstrap machine is the sole holder of worker/ingress/builder.
+	_, err := mc.UpdateMachine(ctx, connect.NewRequest(&v1.UpdateMachineRequest{
+		Machine:  f.state.MachineID,
+		Roles:    []v1.MachineRole{v1.MachineRole_MACHINE_ROLE_WORKER},
+		SetRoles: true,
+	}))
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+	require.ErrorContains(t, err, "ingress")
+
+	// Turning roles on remains allowed.
+	_, err = mc.UpdateMachine(ctx, connect.NewRequest(&v1.UpdateMachineRequest{
+		Machine: f.state.MachineID,
+		Roles: []v1.MachineRole{
+			v1.MachineRole_MACHINE_ROLE_WORKER,
+			v1.MachineRole_MACHINE_ROLE_INGRESS,
+			v1.MachineRole_MACHINE_ROLE_BUILDER,
+		},
+		SetRoles: true,
+	}))
+	require.NoError(t, err)
+}

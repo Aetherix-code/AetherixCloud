@@ -161,7 +161,7 @@ func (s *deploySvc) GetDeployment(ctx context.Context, req *connect.Request[v1.G
 		return nil, errNotFound("deployment", req.Msg.DeploymentId)
 	}
 	reps, _ := store.ListReplicas(ctx, s.Store, map[string]string{"deployment_id": d.Id})
-	return connect.NewResponse(&v1.GetDeploymentResponse{Deployment: d, Replicas: reps}), nil
+	return connect.NewResponse(&v1.GetDeploymentResponse{Deployment: d, Replicas: visibleReplicas(reps)}), nil
 }
 
 func (s *deploySvc) ListDeployments(ctx context.Context, req *connect.Request[v1.ListDeploymentsRequest]) (*connect.Response[v1.ListDeploymentsResponse], error) {

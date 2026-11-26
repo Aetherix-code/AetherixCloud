@@ -13,7 +13,7 @@ import { AuditSettings } from '@/routes/audit'
 import { ConsentPage } from '@/routes/consent'
 import { SetupPage } from '@/routes/setup'
 import { useSetupStatus } from '@/lib/queries'
-import { AgentsSettings, BackupsSettings, GeneralSettings, GithubSettings, UpdatesSettings, UsersSettings } from '@/routes/settings'
+import { AgentsSettings, BackupsSettings, GeneralSettings, GithubSettings, S3TargetsSettings, UpdatesSettings, UsersSettings } from '@/routes/settings'
 
 const rootRoute = createRootRoute({ component: Outlet })
 
@@ -79,6 +79,7 @@ const settingsGithub = createRoute({ getParentRoute: () => appRoute, path: '/set
 const settingsAgents = createRoute({ getParentRoute: () => appRoute, path: '/settings/agents', component: AgentsSettings })
 const settingsAudit = createRoute({ getParentRoute: () => appRoute, path: '/settings/audit', component: AuditSettings })
 const settingsBackups = createRoute({ getParentRoute: () => appRoute, path: '/settings/backups', component: BackupsSettings })
+const settingsS3Targets = createRoute({ getParentRoute: () => appRoute, path: '/settings/s3-targets', component: S3TargetsSettings })
 const settingsUpdates = createRoute({ getParentRoute: () => appRoute, path: '/settings/updates', component: UpdatesSettings })
 const settingsGeneral = createRoute({ getParentRoute: () => appRoute, path: '/settings/general', component: GeneralSettings })
 
@@ -99,6 +100,7 @@ const routeTree = rootRoute.addChildren([
     settingsGithub,
     settingsAgents,
     settingsAudit,
+    settingsS3Targets,
     settingsBackups,
     settingsUpdates,
     settingsGeneral,
