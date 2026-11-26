@@ -225,7 +225,14 @@ export function AgentsSettings() {
       <div className="space-y-4">
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><Bot className="size-4" />Connector URL</CardTitle><CardDescription>Add as a custom connector in ChatGPT or Claude and sign in with your AetherixCloud account (OAuth 2.1). Served by every node.</CardDescription></CardHeader>
-          <CardContent><CopyBox text={url} /></CardContent>
+          <CardContent className="space-y-3">
+            <CopyBox text={url} />
+            <p className="text-xs text-muted-foreground">
+              Behind Cloudflare: allow Anthropic egress <code className="rounded bg-muted px-1">160.79.104.0/21</code> (or skip Bot Fight / WAF for{' '}
+              <code className="rounded bg-muted px-1">/mcp</code>, <code className="rounded bg-muted px-1">/oauth/*</code> and{' '}
+              <code className="rounded bg-muted px-1">/.well-known/*</code>). Otherwise Claude signs in, then shows “refused Claude’s request” because the post-auth MCP call never reaches the node.
+            </p>
+          </CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle>Copy-paste config</CardTitle></CardHeader>

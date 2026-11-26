@@ -110,14 +110,16 @@ func or(d, def time.Duration) time.Duration {
 // Handlers returns the path -> handler map to mount on the daemon muxes.
 func (s *Server) Handlers() map[string]http.Handler {
 	return map[string]http.Handler{
-		PathProtectedResource:       http.HandlerFunc(s.protectedResource),
-		PathProtectedResource + "/": http.HandlerFunc(s.protectedResource),
-		PathAuthServerMeta:          http.HandlerFunc(s.authServerMeta),
-		PathAuthorize:               http.HandlerFunc(s.authorize),
-		PathToken:                   http.HandlerFunc(s.token),
-		PathRegister:                http.HandlerFunc(s.register),
-		PathRevoke:                  http.HandlerFunc(s.revoke),
-		PathConsentAPI:              http.HandlerFunc(s.consentAPI),
+		PathProtectedResource:                             http.HandlerFunc(s.protectedResource),
+		PathProtectedResource + "/":                       http.HandlerFunc(s.protectedResource),
+		PathProtectedResource + DefaultResourcePath:       http.HandlerFunc(s.protectedResource), // RFC 9728 path form
+		PathProtectedResource + DefaultResourcePath + "/": http.HandlerFunc(s.protectedResource),
+		PathAuthServerMeta:                                http.HandlerFunc(s.authServerMeta),
+		PathAuthorize:                                     http.HandlerFunc(s.authorize),
+		PathToken:                                         http.HandlerFunc(s.token),
+		PathRegister:                                      http.HandlerFunc(s.register),
+		PathRevoke:                                        http.HandlerFunc(s.revoke),
+		PathConsentAPI:                                    http.HandlerFunc(s.consentAPI),
 	}
 }
 
@@ -151,6 +153,7 @@ var scopesSupported = []string{auth.ScopeRead, auth.ScopeDeploy, auth.ScopeAdmin
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
@@ -162,13 +165,18 @@ func oauthErr(w http.ResponseWriter, code int, e, desc string) {
 
 func (s *Server) cors(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, MCP-Protocol-Version")
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, MCP-Protocol-Version")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
 	return false
+}
+
+// sameResource compares RFC 8707 resource indicators (ignore one trailing slash).
+func sameResource(a, b string) bool {
+	return strings.TrimRight(strings.TrimSpace(a), "/") == strings.TrimRight(strings.TrimSpace(b), "/")
 }
 
 // ---- metadata
@@ -203,7 +211,7 @@ func (s *Server) authServerMeta(w http.ResponseWriter, r *http.Request) {
 		"code_challenge_methods_supported":               []string{"S256"},
 		"token_endpoint_auth_methods_supported":          []string{"none", "client_secret_post", "client_secret_basic"},
 		"scopes_supported":                               scopesSupported,
-		"authorization_response_iss_parameter_supported": false,
+		"authorization_response_iss_parameter_supported": true,
 	})
 }
 
@@ -408,11 +416,14 @@ func errPage(w http.ResponseWriter, msg string) {
 	http.Error(w, "authorization error: "+msg, http.StatusBadRequest)
 }
 
-func redirectErr(w http.ResponseWriter, r *http.Request, redirect, state, code, desc string) {
+func redirectErr(w http.ResponseWriter, r *http.Request, s *Server, redirect, state, code, desc string) {
 	u, _ := url.Parse(redirect)
 	q := u.Query()
 	q.Set("error", code)
 	q.Set("error_description", desc)
+	if s != nil {
+		q.Set("iss", s.BaseURLFor(r))
+	}
 	if state != "" {
 		q.Set("state", state)
 	}
@@ -438,19 +449,23 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 	state := q.Get("state")
 	switch {
 	case q.Get("response_type") != "code":
-		redirectErr(w, r, redirect, state, "unsupported_response_type", "only response_type=code is supported")
+		redirectErr(w, r, s, redirect, state, "unsupported_response_type", "only response_type=code is supported")
 		return
 	case q.Get("code_challenge") == "" || q.Get("code_challenge_method") != "S256":
-		redirectErr(w, r, redirect, state, "invalid_request", "PKCE with code_challenge_method=S256 is required")
+		redirectErr(w, r, s, redirect, state, "invalid_request", "PKCE with code_challenge_method=S256 is required")
 		return
 	}
+	// Connectors (Claude, ChatGPT) often omit scope or send only offline_access.
+	// Offer every scope we support; the consent screen lets the user narrow to
+	// what their role allows.
 	scopes := parseScopes(q.Get("scope"))
 	if len(scopes) == 0 {
-		scopes = []string{auth.ScopeRead}
+		scopes = append([]string(nil), scopesSupported...)
 	}
+	resource := strings.TrimRight(strings.TrimSpace(q.Get("resource")), "/")
 	id := "req:" + randString(24)
 	p := &pending{Kind: "request", ClientID: c.ID, RedirectURI: redirect, State: state, Challenge: q.Get("code_challenge"),
-		Scopes: scopes, Resource: q.Get("resource"), Expires: time.Now().Add(s.requestTTL())}
+		Scopes: scopes, Resource: resource, Expires: time.Now().Add(s.requestTTL())}
 	if err := s.putPending(r.Context(), id, p); err != nil {
 		errPage(w, "storage error")
 		return
@@ -474,9 +489,13 @@ func (s *Server) consentAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ru, _ := url.Parse(req.RedirectURI)
+		allowed := allowedScopes(p)
+		// Offer every scope the user's role may grant. Clients often request only
+		// "read"; the user can still add deploy/admin for full MCP control.
+		offer := unionScopes(req.Scopes, allowed)
 		writeJSON(w, 200, map[string]any{
 			"client_id": c.ID, "client_name": c.Name, "redirect_host": ru.Host, "redirect_scheme": ru.Scheme,
-			"requested_scopes": req.Scopes, "allowed_scopes": allowedScopes(p), "resource": req.Resource,
+			"requested_scopes": offer, "allowed_scopes": allowed, "resource": req.Resource,
 			"user": map[string]string{"id": p.UserID, "email": p.Email},
 		})
 	case http.MethodPost:
@@ -494,17 +513,22 @@ func (s *Server) consentAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = s.Store.Delete(r.Context(), store.TableOAuthGrants, "req:"+in.Request) // single use
+		iss := s.BaseURLFor(r)
 		if !in.Approve {
-			writeJSON(w, 200, map[string]string{"redirect_url": errURL(req.RedirectURI, req.State, "access_denied", "the user denied the request")})
+			writeJSON(w, 200, map[string]string{"redirect_url": errURL(req.RedirectURI, req.State, iss, "access_denied", "the user denied the request")})
 			return
 		}
-		granted := intersect(in.Scopes, allowedScopes(p))
+		allowed := allowedScopes(p)
+		var granted []string
 		if in.Scopes == nil {
-			granted = intersect(req.Scopes, allowedScopes(p))
+			granted = intersect(req.Scopes, allowed)
+		} else {
+			// Honor the user's checkbox selection up to their role (not capped to
+			// the client's original scope list — connectors rarely know our scopes).
+			granted = intersect(in.Scopes, allowed)
 		}
-		granted = intersect(granted, req.Scopes)
 		if len(granted) == 0 {
-			writeJSON(w, 200, map[string]string{"redirect_url": errURL(req.RedirectURI, req.State, "access_denied", "no permitted scopes")})
+			writeJSON(w, 200, map[string]string{"redirect_url": errURL(req.RedirectURI, req.State, iss, "access_denied", "no permitted scopes")})
 			return
 		}
 		code := randString(32)
@@ -517,6 +541,7 @@ func (s *Server) consentAPI(w http.ResponseWriter, r *http.Request) {
 		u, _ := url.Parse(req.RedirectURI)
 		qq := u.Query()
 		qq.Set("code", code)
+		qq.Set("iss", iss) // RFC 9207 — Claude validates this against AS metadata issuer
 		if req.State != "" {
 			qq.Set("state", req.State)
 		}
@@ -529,11 +554,14 @@ func (s *Server) consentAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func errURL(redirect, state, code, desc string) string {
+func errURL(redirect, state, iss, code, desc string) string {
 	u, _ := url.Parse(redirect)
 	q := u.Query()
 	q.Set("error", code)
 	q.Set("error_description", desc)
+	if iss != "" {
+		q.Set("iss", iss)
+	}
 	if state != "" {
 		q.Set("state", state)
 	}
@@ -576,6 +604,17 @@ func intersect(a, b []string) []string {
 	return out
 }
 
+// unionScopes returns scopesSupported order for every scope in a or b.
+func unionScopes(a, b []string) []string {
+	var out []string
+	for _, sc := range scopesSupported {
+		if slices.Contains(a, sc) || slices.Contains(b, sc) {
+			out = append(out, sc)
+		}
+	}
+	return out
+}
+
 // ---- token endpoint
 
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
@@ -609,11 +648,12 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) issue(w http.ResponseWriter, r *http.Request, g *auth.Grant, refresh string) {
 	now := time.Now()
-	aud := g.Resource
+	base := s.BaseURLFor(r)
+	aud := strings.TrimRight(g.Resource, "/")
 	if aud == "" {
-		aud = s.BaseURLFor(r) + s.resPath()
+		aud = base + s.resPath()
 	}
-	at := s.Auth.Signer.Sign(auth.Claims{Iss: s.BaseURLFor(r), Sub: g.UserID, Sid: g.ID, Typ: auth.KindOAuth, Scope: strings.Join(g.Scopes, " "),
+	at := s.Auth.Signer.Sign(auth.Claims{Iss: base, Sub: g.UserID, Sid: g.ID, Typ: auth.KindOAuth, Scope: strings.Join(g.Scopes, " "),
 		Aud: aud, Cid: g.ClientID, Iat: now.Unix(), Exp: now.Add(s.accessTTL()).Unix()})
 	writeJSON(w, 200, map[string]any{"access_token": at, "token_type": "Bearer", "expires_in": int(s.accessTTL().Seconds()),
 		"refresh_token": refresh, "scope": strings.Join(g.Scopes, " ")})
@@ -645,6 +685,20 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c *Client)
 	if len(v) < 43 || len(v) > 128 || subtle.ConstantTimeCompare([]byte(base64.RawURLEncoding.EncodeToString(sum[:])), []byte(cp.Challenge)) != 1 {
 		oauthErr(w, 400, "invalid_grant", "PKCE verification failed")
 		return
+	}
+	// RFC 8707: resource on the token request must match the one from authorize
+	// (when present). Claude binds the access token to this audience.
+	resource := strings.TrimSpace(r.PostFormValue("resource"))
+	switch {
+	case resource != "" && cp.Resource != "" && !sameResource(resource, cp.Resource):
+		oauthErr(w, 400, "invalid_target", "resource does not match the authorization request")
+		return
+	case resource != "":
+		cp.Resource = strings.TrimRight(resource, "/")
+	case cp.Resource != "":
+		cp.Resource = strings.TrimRight(cp.Resource, "/")
+	default:
+		cp.Resource = s.BaseURLFor(r) + s.resPath()
 	}
 	u, err := auth.GetUser(ctx, s.Store, cp.UserID)
 	if err != nil {

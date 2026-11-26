@@ -598,6 +598,7 @@ func TestOAuthFlowForConnectors(t *testing.T) {
 	asm := get("/.well-known/oauth-authorization-server")
 	require.Equal(t, e.srv.URL+"/oauth/register", asm["registration_endpoint"])
 	require.Equal(t, []any{"S256"}, asm["code_challenge_methods_supported"])
+	require.Equal(t, true, asm["authorization_response_iss_parameter_supported"])
 
 	// dynamic client registration
 	code, _ := postJSON(t, http.DefaultClient, e.srv.URL+"/oauth/register", "", map[string]any{"client_name": "x", "redirect_uris": []string{"javascript:alert(1)"}})
@@ -663,6 +664,7 @@ func TestOAuthFlowForConnectors(t *testing.T) {
 	ru, _ := url.Parse(dec["redirect_url"].(string))
 	require.Equal(t, "chatgpt.example", ru.Host)
 	require.Equal(t, "st8", ru.Query().Get("state"))
+	require.Equal(t, e.srv.URL, ru.Query().Get("iss"), "RFC 9207 iss must match AS issuer")
 	authCode := ru.Query().Get("code")
 	require.NotEmpty(t, authCode)
 	// request is single use
@@ -705,12 +707,23 @@ func TestOAuthFlowEndToEnd(t *testing.T) {
 	session := lg.Msg.SessionToken
 
 	verifier, challenge := pkce()
+	// Claude often sends no scope (or only offline_access) — we must still offer read/deploy/admin.
 	resp, err := noRedirect().Get(e.srv.URL + "/oauth/authorize?" + url.Values{"response_type": {"code"}, "client_id": {cid}, "redirect_uri": {redirect},
-		"code_challenge": {challenge}, "code_challenge_method": {"S256"}, "scope": {"read deploy"}}.Encode())
+		"code_challenge": {challenge}, "code_challenge_method": {"S256"}, "scope": {"offline_access"}}.Encode())
 	require.NoError(t, err)
 	loc, _ := url.Parse(resp.Header.Get("Location"))
+	reqID := loc.Query().Get("request")
+	r, _ := http.NewRequest("GET", e.srv.URL+"/oauth/api/consent?request="+reqID, nil)
+	r.Header.Set("Authorization", "Bearer "+session)
+	infoResp, err := http.DefaultClient.Do(r)
+	require.NoError(t, err)
+	var info map[string]any
+	require.NoError(t, json.NewDecoder(infoResp.Body).Decode(&info))
+	infoResp.Body.Close()
+	require.Equal(t, []any{"read", "deploy", "admin"}, info["requested_scopes"])
+	require.Equal(t, []any{"read", "deploy", "admin"}, info["allowed_scopes"])
 	// the user narrows the scopes on the consent screen
-	_, dec := postJSON(t, http.DefaultClient, e.srv.URL+"/oauth/api/consent", session, map[string]any{"request": loc.Query().Get("request"), "approve": true, "scopes": []string{"read"}})
+	_, dec := postJSON(t, http.DefaultClient, e.srv.URL+"/oauth/api/consent", session, map[string]any{"request": reqID, "approve": true, "scopes": []string{"read"}})
 	ru, _ := url.Parse(dec["redirect_url"].(string))
 	code, tk := tokenReq(t, e, url.Values{"grant_type": {"authorization_code"}, "code": {ru.Query().Get("code")}, "client_id": {cid},
 		"redirect_uri": {redirect}, "code_verifier": {verifier}})
@@ -763,6 +776,43 @@ func TestOAuthFlowEndToEnd(t *testing.T) {
 	r2, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, 401, r2.StatusCode)
+}
+
+func TestOAuthConsentOffersRoleScopes(t *testing.T) {
+	// Even when the connector only asks for "read", an owner must see and be
+	// able to grant deploy/admin — Claude never sends our full scope list.
+	e := newEnv(t, nil)
+	ctx := context.Background()
+	redirect := "https://claude.ai/api/mcp/auth_callback"
+	_, reg := postJSON(t, http.DefaultClient, e.srv.URL+"/oauth/register", "", map[string]any{"client_name": "Claude", "redirect_uris": []string{redirect}})
+	cid := reg["client_id"].(string)
+	_, err := auth.CreateUser(ctx, e.st, "o@x.io", "", "password123", v1.Role_ROLE_OWNER)
+	require.NoError(t, err)
+	lg, err := aetherixv1connect.NewAuthServiceClient(http.DefaultClient, e.srv.URL).Login(ctx, connect.NewRequest(&v1.LoginRequest{Email: "o@x.io", Password: "password123"}))
+	require.NoError(t, err)
+	session := lg.Msg.SessionToken
+	verifier, challenge := pkce()
+	resp, err := noRedirect().Get(e.srv.URL + "/oauth/authorize?" + url.Values{"response_type": {"code"}, "client_id": {cid}, "redirect_uri": {redirect},
+		"code_challenge": {challenge}, "code_challenge_method": {"S256"}, "scope": {"read"}}.Encode())
+	require.NoError(t, err)
+	loc, _ := url.Parse(resp.Header.Get("Location"))
+	id := loc.Query().Get("request")
+	r, _ := http.NewRequest("GET", e.srv.URL+"/oauth/api/consent?request="+id, nil)
+	r.Header.Set("Authorization", "Bearer "+session)
+	infoResp, err := http.DefaultClient.Do(r)
+	require.NoError(t, err)
+	var info map[string]any
+	require.NoError(t, json.NewDecoder(infoResp.Body).Decode(&info))
+	infoResp.Body.Close()
+	require.Equal(t, []any{"read", "deploy", "admin"}, info["requested_scopes"])
+	_, dec := postJSON(t, http.DefaultClient, e.srv.URL+"/oauth/api/consent", session, map[string]any{
+		"request": id, "approve": true, "scopes": []string{"read", "deploy", "admin"},
+	})
+	ru, _ := url.Parse(dec["redirect_url"].(string))
+	code, tk := tokenReq(t, e, url.Values{"grant_type": {"authorization_code"}, "code": {ru.Query().Get("code")}, "client_id": {cid},
+		"redirect_uri": {redirect}, "code_verifier": {verifier}})
+	require.Equal(t, 200, code, tk)
+	require.Equal(t, "read deploy admin", tk["scope"])
 }
 
 func TestOAuthRevokeAndGrantList(t *testing.T) {

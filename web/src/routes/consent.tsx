@@ -28,7 +28,9 @@ export function ConsentPage() {
     fetchConsent(request)
       .then((c) => {
         setInfo(c)
-        setScopes(c.requested_scopes.filter((s) => c.allowed_scopes.includes(s)))
+        // Pre-check everything the user's role allows so connectors that only
+        // asked for "read" still get deploy/admin when the owner wants full control.
+        setScopes(c.allowed_scopes.filter((s) => c.requested_scopes.includes(s)))
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
   }, [status, request])
@@ -68,7 +70,7 @@ export function ConsentPage() {
               </div>
             </div>
             <fieldset className="space-y-2">
-              <legend className="mb-1 text-xs font-medium text-muted-foreground">Requested access</legend>
+              <legend className="mb-1 text-xs font-medium text-muted-foreground">Access to grant</legend>
               {info.requested_scopes.map((s) => {
                 const allowed = info.allowed_scopes.includes(s)
                 return (
