@@ -117,22 +117,42 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, MCP-Protocol-Version, Mcp-Session-Id")
 		w.Header().Set("Access-Control-Expose-Headers", "WWW-Authenticate, Mcp-Session-Id")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("CDN-Cache-Control", "no-store")
+		w.Header().Set("Cloudflare-CDN-Cache-Control", "no-store")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		hasAuth := strings.TrimSpace(r.Header.Get("Authorization")) != ""
 		opts := &sdkauth.RequireBearerTokenOptions{AllowMissingExpiration: true, Scopes: []string{auth.ScopeRead}}
 		if s.cfg.OAuth != nil {
 			opts.ResourceMetadataURL = s.cfg.OAuth.ResourceMetadataURL(r)
 		}
-		sdkauth.RequireBearerToken(s.verify, opts)(limited).ServeHTTP(w, r)
+		rec := &statusRecorder{ResponseWriter: w, code: 200}
+		sdkauth.RequireBearerToken(s.verify, opts)(limited).ServeHTTP(rec, r)
+		if hasAuth {
+			s.log.Info("mcp request", "method", r.Method, "status", rec.code, "ua", r.UserAgent(),
+				"proto", r.Header.Get("MCP-Protocol-Version"), "auth", true)
+		}
 	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	code int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.code = code
+	s.ResponseWriter.WriteHeader(code)
 }
 
 // verify implements sdkauth.TokenVerifier on top of internal/auth.
 func (s *Server) verify(ctx context.Context, token string, _ *http.Request) (*sdkauth.TokenInfo, error) {
 	p, err := s.cfg.Auth.Authenticate(ctx, token)
 	if err != nil {
+		s.log.Info("mcp auth failed", "err", err.Error(), "token_prefix", tokenPrefix(token))
 		if errors.Is(err, auth.ErrInvalidToken) {
 			return nil, fmt.Errorf("%w: %v", sdkauth.ErrInvalidToken, err)
 		}
@@ -149,6 +169,13 @@ func (s *Server) verify(ctx context.Context, token string, _ *http.Request) (*sd
 		ti.Expiration = p.Expires
 	}
 	return ti, nil
+}
+
+func tokenPrefix(t string) string {
+	if len(t) > 12 {
+		return t[:12] + "…"
+	}
+	return t
 }
 
 func principalOf(ti *sdkauth.TokenInfo) *auth.Principal {

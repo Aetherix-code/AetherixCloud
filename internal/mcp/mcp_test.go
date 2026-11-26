@@ -188,7 +188,7 @@ func TestAuthRequired(t *testing.T) {
 	resp := do("")
 	require.Equal(t, 401, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("WWW-Authenticate"), "resource_metadata=")
-	require.Contains(t, resp.Header.Get("WWW-Authenticate"), "/.well-known/oauth-protected-resource")
+	require.Contains(t, resp.Header.Get("WWW-Authenticate"), "/.well-known/oauth-protected-resource/mcp")
 	require.Equal(t, 401, do("axt_bogus").StatusCode)
 }
 

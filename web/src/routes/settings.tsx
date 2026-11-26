@@ -228,10 +228,13 @@ export function AgentsSettings() {
           <CardContent className="space-y-3">
             <CopyBox text={url} />
             <p className="text-xs text-muted-foreground">
-              Behind Cloudflare: check <span className="font-medium">Security → AI Crawl Control</span> (not WAF “mitigated”) and set{' '}
-              <code className="rounded bg-muted px-1">Claude-User</code> to Allow — OAuth uses <code className="rounded bg-muted px-1">python-httpx</code>, but the post-auth{' '}
-              <code className="rounded bg-muted px-1">/mcp</code> call uses <code className="rounded bg-muted px-1">Claude-User</code> and is blocked separately. Also allow Anthropic egress{' '}
-              <code className="rounded bg-muted px-1">160.79.104.0/21</code> if needed.
+              Behind Cloudflare, three separate controls can block Claude after sign-in (OAuth uses{' '}
+              <code className="rounded bg-muted px-1">python-httpx</code>; post-auth <code className="rounded bg-muted px-1">/mcp</code> uses{' '}
+              <code className="rounded bg-muted px-1">Claude-User</code>): (1) Security → Settings → Bot traffic →{' '}
+              <span className="font-medium">AI Crawler and Agent access policies</span> → Agent = Allow; (2) Security → Bots →{' '}
+              <span className="font-medium">Bot Fight Mode</span> / Super Bot Fight Mode Off (or WAF Skip for{' '}
+              <code className="rounded bg-muted px-1">160.79.104.0/21</code>); (3) Caching → Browser Cache TTL = Respect Existing Headers, and purge{' '}
+              <code className="rounded bg-muted px-1">cloud.*</code> after upgrades.
             </p>
           </CardContent>
         </Card>

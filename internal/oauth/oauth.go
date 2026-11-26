@@ -92,7 +92,7 @@ func New(st store.Store, a *auth.Authenticator, log *slog.Logger) *Server {
 
 func (s *Server) accessTTL() time.Duration  { return or(s.AccessTTL, time.Hour) }
 func (s *Server) refreshTTL() time.Duration { return or(s.RefreshTTL, 30*24*time.Hour) }
-func (s *Server) codeTTL() time.Duration    { return or(s.CodeTTL, time.Minute) }
+func (s *Server) codeTTL() time.Duration    { return or(s.CodeTTL, 5*time.Minute) }
 func (s *Server) requestTTL() time.Duration { return or(s.RequestTTL, 10*time.Minute) }
 func (s *Server) resPath() string {
 	if s.ResourcePath == "" {
@@ -142,9 +142,10 @@ func (s *Server) BaseURLFor(r *http.Request) string {
 	return scheme + "://" + host
 }
 
-// ResourceMetadataURL is advertised in WWW-Authenticate challenges.
+// ResourceMetadataURL is advertised in WWW-Authenticate challenges (RFC 9728
+// path-inserted form for /mcp).
 func (s *Server) ResourceMetadataURL(r *http.Request) string {
-	return s.BaseURLFor(r) + PathProtectedResource
+	return s.BaseURLFor(r) + PathProtectedResource + s.resPath()
 }
 
 // Scopes supported.
@@ -152,7 +153,11 @@ var scopesSupported = []string{auth.ScopeRead, auth.ScopeDeploy, auth.ScopeAdmin
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
+	// Cloudflare Browser Cache TTL "override" ignores Cache-Control alone;
+	// CDN-Cache-Control is what keeps OAuth metadata off the edge cache.
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("CDN-Cache-Control", "no-store")
+	w.Header().Set("Cloudflare-CDN-Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(code)
@@ -654,6 +659,8 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request, g *auth.Grant, re
 		oauthErr(w, 500, "server_error", "storage error")
 		return
 	}
+	s.Logger.Info("oauth token issued", "grant", g.ID, "client", g.ClientName, "user", g.UserID,
+		"scopes", strings.Join(g.Scopes, " "), "resource", g.Resource, "ua", r.UserAgent())
 	writeJSON(w, 200, map[string]any{"access_token": at, "token_type": "Bearer", "expires_in": int(s.accessTTL().Seconds()),
 		"refresh_token": refresh, "scope": strings.Join(g.Scopes, " ")})
 }
