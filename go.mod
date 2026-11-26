@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	connectrpc.com/connect v1.21.1
 	github.com/coder/websocket v1.8.14
+	github.com/creack/pty v1.1.24
 	github.com/distribution/distribution/v3 v3.1.2
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.8.2
@@ -33,7 +34,6 @@ require (
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.2.0 // indirect
-	github.com/creack/pty v1.1.24 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/docker-credential-helpers v0.9.5 // indirect
