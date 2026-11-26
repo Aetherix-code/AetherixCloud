@@ -87,7 +87,7 @@ func SyncHostDeps(ctx context.Context, opt HostOptions) error {
 	if opt.SkipStart {
 		return nil
 	}
-	return enableBuildkitd(log)
+	return enableBuildkitd(opt, log)
 }
 
 func (opt HostOptions) withDefaults() HostOptions {
@@ -280,7 +280,13 @@ func ensureBuildkitConfig(opt HostOptions, log *slog.Logger) error {
 		return err
 	}
 	tomlPath := filepath.Join(opt.BuildkitConfigDir, "buildkitd.toml")
+	writeTOML := false
 	if _, err := os.Stat(tomlPath); err != nil {
+		writeTOML = true
+	} else if b, err := os.ReadFile(tomlPath); err == nil && !strings.Contains(string(b), "127.0.0.1:5000") {
+		writeTOML = true // older installs missing insecure local registry
+	}
+	if writeTOML {
 		body := []byte(defaultBuildkitTOML)
 		if b, err := readReleaseFile(opt.ReleaseDir, "buildkitd.toml"); err == nil {
 			body = b
@@ -320,8 +326,7 @@ func buildkitdUnit(binDir, cfgDir string) string {
 Description=AetherixCloud BuildKit daemon (builder nodes)
 Documentation=https://github.com/Aetherix-code/AetherixCloud
 After=network-online.target docker.service
-Wants=network-online.target
-Requires=docker.service
+Wants=network-online.target docker.service
 
 [Service]
 Type=simple
@@ -344,11 +349,13 @@ func ensureBuilderEnv(opt HostOptions, log *slog.Logger) error {
 		return err
 	}
 	frontend := "ghcr.io/railwayapp/railpack-frontend:v" + opt.RailpackVersion
+	// Prepend BinDir so buildctl/railpack resolve even when systemd PATH is minimal.
 	body := fmt.Sprintf(`[Service]
 Environment=AX_CADDY_BIN=%s/caddy
 Environment=AX_BUILDKIT_ADDR=%s
 Environment=AX_RAILPACK_FRONTEND=%s
-`, opt.BinDir, defaultBuildkitAddr, frontend)
+Environment=PATH=%s:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+`, opt.BinDir, defaultBuildkitAddr, frontend, opt.BinDir)
 	path := filepath.Join(drop, "builder.conf")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		return err
@@ -357,7 +364,7 @@ Environment=AX_RAILPACK_FRONTEND=%s
 	return nil
 }
 
-func enableBuildkitd(log *slog.Logger) error {
+func enableBuildkitd(opt HostOptions, log *slog.Logger) error {
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		log.Warn("systemctl not found; start buildkitd manually")
 		return nil
@@ -366,12 +373,46 @@ func enableBuildkitd(log *slog.Logger) error {
 	if err := exec.Command("systemctl", "enable", "--now", "buildkitd").Run(); err != nil {
 		// Best-effort restart if enable --now failed (already enabled).
 		if err2 := exec.Command("systemctl", "restart", "buildkitd").Run(); err2 != nil {
-			log.Warn("could not start buildkitd", "err", err, "restart_err", err2)
-			return nil
+			return fmt.Errorf("start buildkitd: %v (restart: %v)", err, err2)
 		}
+	}
+	if err := waitBuildkitReady(opt, 30*time.Second); err != nil {
+		return err
 	}
 	log.Info("buildkitd enabled")
 	return nil
+}
+
+// waitBuildkitReady polls until buildctl can talk to buildkitd.
+func waitBuildkitReady(opt HostOptions, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	bin := ""
+	if opt.BinDir != "" {
+		cand := binPath(opt, "buildctl")
+		if _, err := os.Stat(cand); err == nil {
+			bin = cand
+		}
+	}
+	if bin == "" {
+		if p, err := exec.LookPath("buildctl"); err == nil {
+			bin = p
+		} else if _, err := os.Stat("/usr/local/bin/buildctl"); err == nil {
+			bin = "/usr/local/bin/buildctl"
+		} else {
+			return fmt.Errorf("buildctl not found on PATH")
+		}
+	}
+	var last error
+	for time.Now().Before(deadline) {
+		cmd := exec.Command(bin, "--addr", defaultBuildkitAddr, "debug", "workers")
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		last = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("buildkitd not ready after %s: %v", timeout, last)
 }
 
 func readReleaseFile(releaseDir, name string) ([]byte, error) {

@@ -9,8 +9,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Pipeline turns a source directory into an image in the embedded registry:
@@ -69,6 +71,15 @@ func (p *Pipeline) Run(ctx context.Context, j Job) (*Result, error) {
 	if log == nil {
 		log = io.Discard
 	}
+	if _, ok := p.BK.(*Buildctl); ok {
+		if err := waitLocalRegistry(ctx, log); err != nil {
+			return nil, err
+		}
+		fmt.Fprintln(log, "==> checking buildkitd")
+		if err := p.BK.(*Buildctl).Ping(ctx, log); err != nil {
+			return nil, err
+		}
+	}
 	plan, err := Detect(j.SrcDir, j.Settings)
 	if err != nil {
 		return nil, err
@@ -119,6 +130,28 @@ func (p *Pipeline) Run(ctx context.Context, j Job) (*Result, error) {
 	res.Digest = br.Digest
 	fmt.Fprintf(log, "==> pushed %s %s\n", image, br.Digest)
 	return res, nil
+}
+
+func waitLocalRegistry(ctx context.Context, log io.Writer) error {
+	addr := LocalRegistry
+	deadline := time.Now().Add(20 * time.Second)
+	var last error
+	for time.Now().Before(deadline) {
+		d := net.Dialer{Timeout: time.Second}
+		c, err := d.DialContext(ctx, "tcp", addr)
+		if err == nil {
+			_ = c.Close()
+			return nil
+		}
+		last = err
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	fmt.Fprintf(log, "==> waiting for local registry %s failed: %v\n", addr, last)
+	return fmt.Errorf("local registry %s not reachable: %w (is aetherixd's registry listening?)", addr, last)
 }
 
 // Preview is the detected-plan preview for the UI.

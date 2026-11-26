@@ -51,6 +51,11 @@ func TestHostConfigAndEnv(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(body), "railpack-frontend:v8.8.8")
 	require.Contains(t, string(body), "AX_BUILDKIT_ADDR=")
+	require.Contains(t, string(body), "PATH="+binDir+":")
+	unit, err := os.ReadFile(filepath.Join(unitDir, "buildkitd.service"))
+	require.NoError(t, err)
+	require.NotContains(t, string(unit), "Requires=docker.service")
+	require.Contains(t, string(unit), "Wants=network-online.target docker.service")
 }
 
 func TestVerifyFileChecksum(t *testing.T) {

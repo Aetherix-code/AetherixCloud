@@ -124,18 +124,34 @@ export function DeploymentsTab({ service }: { service: Service }) {
 }
 
 function BuildRow({ b }: { b: ServiceBuild }) {
+  const [open, setOpen] = useState(b.status === 'failed' || b.status === 'running')
   const tone = b.status === 'failed' ? 'danger' : b.status === 'running' ? 'info' : b.status === 'succeeded' ? 'success' : 'neutral'
+  const follow = b.status === 'queued' || b.status === 'running'
   return (
     <Card className="px-3 py-2">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
+      <button type="button" className="flex w-full flex-wrap items-center gap-2 text-left text-sm" onClick={() => setOpen((o) => !o)}>
+        {open ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
         <Hammer className="size-3.5 text-muted-foreground" />
         <Badge tone={tone}>{b.status}</Badge>
         <span className="font-mono text-xs text-muted-foreground">{shortId(b.id)}</span>
         {b.commit_sha && <span className="font-mono text-xs">{b.commit_sha.slice(0, 7)}</span>}
         {b.created_at && <span className="text-xs text-muted-foreground">{timeAgo(new Date(b.created_at))}</span>}
-      </div>
-      {b.status === 'failed' && <p className="mt-1 text-xs text-muted-foreground">Open Activity for details, or retry with Simulate push.</p>}
-      {b.status === 'queued' && <p className="mt-1 text-xs text-muted-foreground">Waiting for a builder node to pick this up…</p>}
+      </button>
+      {b.status === 'queued' && !open && <p className="mt-1 text-xs text-muted-foreground">Waiting for a builder node to pick this up…</p>}
+      {open && (
+        <LogView
+          className="mt-2 h-48 w-full overflow-hidden rounded-md border p-2"
+          deps={[b.id, b.status]}
+          open={async (emit, signal) => {
+            try {
+              for await (const e of api.logs.streamBuildLogs({ buildId: b.id, follow }, { signal })) emit(e.line, e.stream)
+            } catch (e) {
+              if (isUnimplemented(e)) emit('Build logs are not available on this node yet.')
+              else throw e
+            }
+          }}
+        />
+      )}
     </Card>
   )
 }

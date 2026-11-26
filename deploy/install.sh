@@ -486,8 +486,7 @@ EOF
 Description=AetherixCloud BuildKit daemon (builder nodes)
 Documentation=https://github.com/${REPO}
 After=network-online.target docker.service
-Wants=network-online.target
-Requires=docker.service
+Wants=network-online.target docker.service
 
 [Service]
 Type=simple

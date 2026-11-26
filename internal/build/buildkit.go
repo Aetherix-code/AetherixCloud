@@ -104,6 +104,37 @@ func (b *Buildctl) Args(req BuildRequest, metadataFile string) (args []string, e
 	return args, env, redact
 }
 
+// AddrOrDefault returns the buildkitd address.
+func (b *Buildctl) AddrOrDefault() string {
+	if b != nil && b.Addr != "" {
+		return b.Addr
+	}
+	return DefaultBuildkitAddr
+}
+
+// Ping checks that buildctl can reach buildkitd.
+func (b *Buildctl) Ping(ctx context.Context, out io.Writer) error {
+	bin := "buildctl"
+	if b != nil && b.Binary != "" {
+		bin = b.Binary
+	}
+	run := Runner(ExecRunner{})
+	if b != nil && b.Runner != nil {
+		run = b.Runner
+	}
+	cap := &captureWriter{w: out}
+	err := run.Run(ctx, Cmd{Name: bin, Args: []string{"--addr", b.AddrOrDefault(), "debug", "workers"}}, cap)
+	if err != nil {
+		hint := "is buildkitd running? try: systemctl status buildkitd"
+		tail := strings.TrimSpace(lastLines(string(cap.buf), 8))
+		if tail != "" {
+			return fmt.Errorf("buildkitd unreachable (%s): %w\n%s", hint, err, tail)
+		}
+		return fmt.Errorf("buildkitd unreachable (%s): %w", hint, err)
+	}
+	return nil
+}
+
 // Build implements BuildKit.
 func (b *Buildctl) Build(ctx context.Context, req BuildRequest, out io.Writer) (BuildResult, error) {
 	dir, err := os.MkdirTemp("", "ax-buildmeta-")
@@ -117,7 +148,15 @@ func (b *Buildctl) Build(ctx context.Context, req BuildRequest, out io.Writer) (
 	if bin == "" {
 		bin = "buildctl"
 	}
-	if err := b.Runner.Run(ctx, Cmd{Name: bin, Args: args, Env: env, Redact: redact}, out); err != nil {
+	cap := &captureWriter{w: out}
+	if err := b.Runner.Run(ctx, Cmd{Name: bin, Args: args, Env: env, Redact: redact}, cap); err != nil {
+		tail := strings.TrimSpace(lastLines(string(cap.buf), 12))
+		if looksLikeConnErr(tail) || looksLikeConnErr(err.Error()) {
+			return BuildResult{}, fmt.Errorf("buildkit build: %w (is buildkitd running? systemctl status buildkitd)\n%s", err, tail)
+		}
+		if tail != "" {
+			return BuildResult{}, fmt.Errorf("buildkit build: %w\n%s", err, tail)
+		}
 		return BuildResult{}, fmt.Errorf("buildkit build: %w", err)
 	}
 	var res BuildResult
@@ -130,6 +169,30 @@ func (b *Buildctl) Build(ctx context.Context, req BuildRequest, out io.Writer) (
 		}
 	}
 	return res, nil
+}
+
+func looksLikeConnErr(s string) bool {
+	s = strings.ToLower(s)
+	for _, p := range []string{"connection refused", "no such file", "unavailable", "dial unix", "connect:"} {
+		if strings.Contains(s, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func lastLines(s string, n int) string {
+	lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+	var keep []string
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			keep = append(keep, l)
+		}
+	}
+	if len(keep) > n {
+		keep = keep[len(keep)-n:]
+	}
+	return strings.Join(keep, "\n")
 }
 
 func sortedKeys(m map[string]string) []string {
