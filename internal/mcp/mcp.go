@@ -101,8 +101,12 @@ func (s *Server) SDK() *sdk.Server { return s.srv }
 
 // Handler is the /mcp endpoint.
 func (s *Server) Handler() http.Handler {
+	// DisableLocalhostProtection: aetherixd is reverse-proxied by Caddy to
+	// 127.0.0.1:8443 with the public Host header. The SDK's DNS-rebinding
+	// guard then returns 403 after a valid bearer — Claude saw that as
+	// "forbidden or insufficient scope" despite a clean oauth.token.
 	inner := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return s.srv },
-		&sdk.StreamableHTTPOptions{JSONResponse: true, Logger: nil})
+		&sdk.StreamableHTTPOptions{JSONResponse: true, DisableLocalhostProtection: true, Logger: nil})
 	limited := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := principalOf(sdkauth.TokenInfoFromContext(r.Context())); p != nil {
 			if ok, wait := s.rate.Allow(p.RateKey()); !ok {
@@ -159,17 +163,25 @@ func (s *Server) Handler() http.Handler {
 		sdkauth.RequireBearerToken(verify, opts)(limited).ServeHTTP(rec, r)
 		if hasAuth {
 			kind := tokenPrefix(bearer)
+			body := strings.TrimSpace(string(rec.body))
 			// mcp.auth tracks credential acceptance only. Protocol 4xx (bad
-			// Accept, GET-without-session, etc.) must not look like a bad token —
-			// that was masking Claude connect failures after a clean oauth.token.
+			// Accept, GET-without-session, Host checks, etc.) must not look
+			// like a bad token.
 			authOK := verified && rec.err == "" && rec.code != http.StatusUnauthorized && rec.code != http.StatusForbidden
 			authErr := rec.err
 			if !authOK && authErr == "" {
-				switch rec.code {
-				case http.StatusUnauthorized:
-					authErr = "unauthorized"
-				case http.StatusForbidden:
-					authErr = "forbidden or insufficient scope"
+				if body != "" {
+					authErr = body
+					if len(authErr) > 160 {
+						authErr = authErr[:160]
+					}
+				} else {
+					switch rec.code {
+					case http.StatusUnauthorized:
+						authErr = "unauthorized"
+					case http.StatusForbidden:
+						authErr = "forbidden or insufficient scope"
+					}
 				}
 			}
 			s.log.Info("mcp request", "method", r.Method, "status", rec.code, "ua", r.UserAgent(),
@@ -177,7 +189,7 @@ func (s *Server) Handler() http.Handler {
 			attrs := map[string]string{
 				"status": strconv.Itoa(rec.code), "ua": r.UserAgent(),
 				"method": r.Method, "proto": r.Header.Get("MCP-Protocol-Version"),
-				"token_kind": kind,
+				"token_kind": kind, "host": r.Host,
 			}
 			if authErr != "" {
 				attrs["error"] = authErr
@@ -224,11 +236,20 @@ type statusRecorder struct {
 	http.ResponseWriter
 	code int
 	err  string
+	body []byte
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
 	s.code = code
 	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	if s.code >= 400 && len(s.body) < 240 {
+		n := min(len(b), 240-len(s.body))
+		s.body = append(s.body, b[:n]...)
+	}
+	return s.ResponseWriter.Write(b)
 }
 
 func (s *statusRecorder) Flush() {

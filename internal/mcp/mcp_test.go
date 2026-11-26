@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -408,6 +409,31 @@ func TestDeployLifecycleToolsAndDomain(t *testing.T) {
 	require.Contains(t, text(res), "permission denied")
 	_, res = call(t, ro, "add_domain", map[string]any{"service": "web", "project": "shop", "hostname": "x.example.com"})
 	require.True(t, res.IsError)
+}
+
+func TestMCPAllowsProxiedPublicHost(t *testing.T) {
+	// Caddy dials 127.0.0.1:8443 with Host=<dashboard>. The Streamable SDK's
+	// DNS-rebinding guard must not reject that — DisableLocalhostProtection.
+	e := newEnv(t, nil)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	srv := &http.Server{Handler: e.mcp.Handler()}
+	go srv.Serve(ln) //nolint:errcheck
+	t.Cleanup(func() { _ = srv.Close() })
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"claude","version":"1"}}}`
+	req, err := http.NewRequest("POST", "http://"+ln.Addr().String()+"/mcp", strings.NewReader(body))
+	require.NoError(t, err)
+	req.Host = "dash.example.com"
+	req.Header.Set("Authorization", "Bearer "+e.admin)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.NotEqual(t, http.StatusForbidden, resp.StatusCode, "proxied public Host must not 403")
+	require.True(t, resp.StatusCode < 400, "status=%d", resp.StatusCode)
 }
 
 func TestMCPAuthAuditIgnoresProtocolErrors(t *testing.T) {
