@@ -170,14 +170,14 @@ func TestBuildctlArgs(t *testing.T) {
 	args, env, redact := b.Args(BuildRequest{Frontend: "gateway.v0", FrontendSource: "ghcr.io/railwayapp/railpack-frontend",
 		ContextDir: "/src", DockerfileDir: "/plan", Filename: "railpack-plan.json", Platform: "linux/arm64", Target: "t",
 		Args: map[string]string{"A": "1"}, Secrets: map[string]string{"API-KEY": "s3cr3t"},
-		Image: "127.0.0.1:5000/p/s:t", CacheRef: "127.0.0.1:5000/_cache/p/s:buildcache"}, "/meta.json")
+		Image: "127.0.0.1:5000/p/s:t", CacheRef: "127.0.0.1:5000/ax-cache/p/s:buildcache"}, "/meta.json")
 	joined := strings.Join(args, " ")
 	for _, want := range []string{"--addr unix:///x.sock", "--frontend gateway.v0", "--opt source=ghcr.io/railwayapp/railpack-frontend",
 		"--local context=/src", "--local dockerfile=/plan", "--opt filename=railpack-plan.json", "--opt platform=linux/arm64",
 		"--opt target=t", "--opt build-arg:A=1", "--secret id=API-KEY,env=AXSECRET_API_KEY",
 		"--output type=image,name=127.0.0.1:5000/p/s:t,push=true,registry.insecure=true",
-		"--import-cache type=registry,ref=127.0.0.1:5000/_cache/p/s:buildcache,registry.insecure=true",
-		"--export-cache type=registry,ref=127.0.0.1:5000/_cache/p/s:buildcache,mode=max", "--metadata-file /meta.json"} {
+		"--import-cache type=registry,ref=127.0.0.1:5000/ax-cache/p/s:buildcache,registry.insecure=true",
+		"--export-cache type=registry,ref=127.0.0.1:5000/ax-cache/p/s:buildcache,mode=max", "--metadata-file /meta.json"} {
 		require.Contains(t, joined, want)
 	}
 	require.NotContains(t, joined, "s3cr3t", "secret values never appear in argv")
@@ -196,7 +196,7 @@ func TestBuildctlDigest(t *testing.T) {
 
 func TestImageRef(t *testing.T) {
 	require.Equal(t, "127.0.0.1:5000/my-proj/web_app:abc1234-x", ImageRef("My Proj", "Web_App", "abc1234-x"))
-	require.Equal(t, "127.0.0.1:5000/_cache/p/s:buildcache", CacheRefFor("p", "s"))
+	require.Equal(t, "127.0.0.1:5000/ax-cache/p/s:buildcache", CacheRefFor("p", "s"))
 }
 
 // ---- pipeline
@@ -219,7 +219,7 @@ func TestPipelineDockerfile(t *testing.T) {
 	require.Equal(t, "Dockerfile", r.Filename)
 	require.Equal(t, "linux/amd64", r.Platform)
 	require.Equal(t, map[string]string{"TOKEN": "v"}, r.Secrets)
-	require.Equal(t, "127.0.0.1:5000/_cache/proj/web:buildcache", r.CacheRef)
+	require.Equal(t, "127.0.0.1:5000/ax-cache/proj/web:buildcache", r.CacheRef)
 	require.Contains(t, log.String(), "detected build type: dockerfile")
 }
 

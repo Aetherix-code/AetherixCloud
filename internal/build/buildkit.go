@@ -211,8 +211,10 @@ func ImageRef(project, service, tag string) string {
 }
 
 // CacheRefFor returns the per-service registry cache ref.
+// Repo path segments must be OCI-legal (no leading underscore) — BuildKit
+// rejects refs like "127.0.0.1:5000/_cache/..." with "invalid reference format".
 func CacheRefFor(project, service string) string {
-	return fmt.Sprintf("%s/_cache/%s/%s:buildcache", LocalRegistry, sanitizeRepo(project), sanitizeRepo(service))
+	return fmt.Sprintf("%s/ax-cache/%s/%s:buildcache", LocalRegistry, sanitizeRepo(project), sanitizeRepo(service))
 }
 
 // LocalRegistry is the embedded registry host valid on every machine.
