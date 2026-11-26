@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"strings"
+	"time"
 
 	v1 "github.com/aetherix/aetherixcloud/gen/aetherix/v1"
 )
@@ -94,6 +95,8 @@ type Principal struct {
 	Via string
 	// Bearer is the raw credential (never persisted or logged).
 	Bearer string
+	// Expires is when the credential ends (OAuth access tokens); zero if N/A.
+	Expires time.Time
 }
 
 // MaxLevel is the highest level the principal may exercise.

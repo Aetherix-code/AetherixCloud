@@ -228,9 +228,10 @@ export function AgentsSettings() {
           <CardContent className="space-y-3">
             <CopyBox text={url} />
             <p className="text-xs text-muted-foreground">
-              Behind Cloudflare: allow Anthropic egress <code className="rounded bg-muted px-1">160.79.104.0/21</code> (or skip Bot Fight / WAF for{' '}
-              <code className="rounded bg-muted px-1">/mcp</code>, <code className="rounded bg-muted px-1">/oauth/*</code> and{' '}
-              <code className="rounded bg-muted px-1">/.well-known/*</code>). Otherwise Claude signs in, then shows “refused Claude’s request” because the post-auth MCP call never reaches the node.
+              Behind Cloudflare: check <span className="font-medium">Security → AI Crawl Control</span> (not WAF “mitigated”) and set{' '}
+              <code className="rounded bg-muted px-1">Claude-User</code> to Allow — OAuth uses <code className="rounded bg-muted px-1">python-httpx</code>, but the post-auth{' '}
+              <code className="rounded bg-muted px-1">/mcp</code> call uses <code className="rounded bg-muted px-1">Claude-User</code> and is blocked separately. Also allow Anthropic egress{' '}
+              <code className="rounded bg-muted px-1">160.79.104.0/21</code> if needed.
             </p>
           </CardContent>
         </Card>

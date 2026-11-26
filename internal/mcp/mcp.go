@@ -144,7 +144,11 @@ func (s *Server) verify(ctx context.Context, token string, _ *http.Request) (*sd
 			scopes = append(scopes, l.String())
 		}
 	}
-	return &sdkauth.TokenInfo{Scopes: scopes, UserID: p.UserID, Extra: map[string]any{"principal": p}}, nil
+	ti := &sdkauth.TokenInfo{Scopes: scopes, UserID: p.UserID, Extra: map[string]any{"principal": p}}
+	if !p.Expires.IsZero() {
+		ti.Expiration = p.Expires
+	}
+	return ti, nil
 }
 
 func principalOf(ti *sdkauth.TokenInfo) *auth.Principal {

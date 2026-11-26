@@ -647,14 +647,13 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) issue(w http.ResponseWriter, r *http.Request, g *auth.Grant, refresh string) {
-	now := time.Now()
-	base := s.BaseURLFor(r)
-	aud := strings.TrimRight(g.Resource, "/")
-	if aud == "" {
-		aud = base + s.resPath()
+	// Opaque access tokens (not JWTs): Claude and other brokers sometimes try
+	// to validate JWT shape/signature and discard HS256 tokens without JWKS.
+	at := auth.MintAccessToken(g, s.accessTTL())
+	if err := auth.PutGrant(r.Context(), s.Store, g); err != nil {
+		oauthErr(w, 500, "server_error", "storage error")
+		return
 	}
-	at := s.Auth.Signer.Sign(auth.Claims{Iss: base, Sub: g.UserID, Sid: g.ID, Typ: auth.KindOAuth, Scope: strings.Join(g.Scopes, " "),
-		Aud: aud, Cid: g.ClientID, Iat: now.Unix(), Exp: now.Add(s.accessTTL()).Unix()})
 	writeJSON(w, 200, map[string]any{"access_token": at, "token_type": "Bearer", "expires_in": int(s.accessTTL().Seconds()),
 		"refresh_token": refresh, "scope": strings.Join(g.Scopes, " ")})
 }
@@ -801,8 +800,10 @@ func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
 	gid := ""
 	if id, _, ok := splitRefresh(tok); ok {
 		gid = id
+	} else if id, _, ok := auth.SplitOAuthAccess(tok); ok {
+		gid = id
 	} else if cl, err := s.Auth.Signer.Parse(tok); err == nil && cl.Typ == auth.KindOAuth {
-		gid = cl.Sid
+		gid = cl.Sid // legacy JWT access tokens
 	}
 	if gid != "" {
 		if g, err := auth.GetGrant(r.Context(), s.Store, gid); err == nil && g.ClientID == c.ID {

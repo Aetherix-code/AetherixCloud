@@ -36,10 +36,34 @@ func (a *Authenticator) Authenticate(ctx context.Context, bearer string) (*Princ
 	switch {
 	case strings.HasPrefix(bearer, TokenPrefix):
 		return a.apiToken(ctx, bearer)
+	case strings.HasPrefix(bearer, OAuthAccessPrefix):
+		return a.oauthAccess(ctx, bearer)
 	case strings.Count(bearer, ".") == 2:
 		return a.jwt(ctx, bearer)
 	}
 	return nil, ErrInvalidToken
+}
+
+func (a *Authenticator) oauthAccess(ctx context.Context, bearer string) (*Principal, error) {
+	gid, secret, ok := SplitOAuthAccess(bearer)
+	if !ok {
+		return nil, ErrInvalidToken
+	}
+	g, err := GetGrant(ctx, a.Store, gid)
+	if err != nil || g.Revoked || !AccessMatches(g, secret) {
+		return nil, ErrInvalidToken
+	}
+	u, err := GetUser(ctx, a.Store, g.UserID)
+	if err != nil {
+		return nil, ErrInvalidToken
+	}
+	p := &Principal{
+		UserID: u.Id, Email: u.Email, Role: u.Role, Scopes: g.Scopes,
+		Kind: KindOAuth, CredentialID: g.ID, Client: g.ClientName, Bearer: bearer,
+		Expires: g.AccessExpires,
+	}
+	a.touchGrant(g)
+	return p, nil
 }
 
 func (a *Authenticator) apiToken(ctx context.Context, bearer string) (*Principal, error) {
@@ -106,6 +130,7 @@ func (a *Authenticator) jwt(ctx context.Context, bearer string) (*Principal, err
 		}
 	case KindOAuth:
 		p.CredentialID = c.Sid
+		p.Expires = time.Unix(c.Exp, 0)
 		g, err := GetGrant(ctx, a.Store, c.Sid)
 		if err == nil {
 			if g.Revoked {
