@@ -27,7 +27,7 @@ import { CommandPalette, openPaletteEvent } from '@/components/command-palette'
 import { useAuth } from '@/lib/auth'
 import { useLiveEvents } from '@/lib/live'
 import { isMock } from '@/lib/api'
-import { useStatus } from '@/lib/queries'
+import { useMachines, useStatus } from '@/lib/queries'
 import { useSidebarCollapsed } from '@/lib/sidebar'
 import { useTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
@@ -270,6 +270,7 @@ export function AppLayout() {
   const { user, logout, authDisabled, status: authStatus } = useAuth()
   const { live } = useLiveEvents(authStatus === 'authed')
   const status = useStatus()
+  const machines = useMachines()
   const [theme, toggleTheme] = useTheme()
   const [collapsed, toggleCollapsed] = useSidebarCollapsed()
   const [moreOpen, setMoreOpen] = useState(false)
@@ -278,12 +279,20 @@ export function AppLayout() {
   const s = status.data
   const { title, showShellTitle } = chromeTitle(pathname)
 
+  // Status.servedBy is the machine id; prefer the human-readable name in the shell.
+  const servedByLabel = (() => {
+    const id = s?.servedBy
+    if (!id) return undefined
+    const match = machines.data?.find((m) => m.id === id)
+    return match?.name || id
+  })()
+
   const subtitle = (() => {
     if (!s) return 'connecting…'
     if (pathname.startsWith('/cluster')) {
       return `${s.machinesUp}/${s.machinesTotal} machines up · ${s.replicasRunning}/${s.replicasDesired} replicas`
     }
-    const parts = [s.cluster?.name, s.cluster?.network, s.servedBy ? `via ${s.servedBy}` : null].filter(Boolean)
+    const parts = [s.cluster?.name, s.cluster?.network, servedByLabel ? `via ${servedByLabel}` : null].filter(Boolean)
     return parts.join(' · ') || 'Cluster overview'
   })()
 
@@ -291,7 +300,7 @@ export function AppLayout() {
     <div className="flex h-full bg-background">
       <Sidebar
         clusterName={s?.cluster?.name ?? 'cluster'}
-        servedBy={s?.servedBy}
+        servedBy={servedByLabel}
         version={s?.version}
         live={live}
         collapsed={collapsed}
