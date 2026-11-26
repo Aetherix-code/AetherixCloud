@@ -124,12 +124,12 @@ export function DeploymentsTab({ service }: { service: Service }) {
 }
 
 function BuildRow({ b }: { b: ServiceBuild }) {
-  const tone = b.status === 'failed' ? 'text-destructive' : b.status === 'running' ? 'text-foreground' : 'text-muted-foreground'
+  const tone = b.status === 'failed' ? 'danger' : b.status === 'running' ? 'info' : b.status === 'succeeded' ? 'success' : 'neutral'
   return (
     <Card className="px-3 py-2">
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Hammer className={cn('size-3.5', tone)} />
-        <Badge variant="outline" className={tone}>{b.status}</Badge>
+        <Hammer className="size-3.5 text-muted-foreground" />
+        <Badge tone={tone}>{b.status}</Badge>
         <span className="font-mono text-xs text-muted-foreground">{shortId(b.id)}</span>
         {b.commit_sha && <span className="font-mono text-xs">{b.commit_sha.slice(0, 7)}</span>}
         {b.created_at && <span className="text-xs text-muted-foreground">{timeAgo(new Date(b.created_at))}</span>}
