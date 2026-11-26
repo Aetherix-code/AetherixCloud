@@ -19,6 +19,7 @@ import {
   saveBuildImageArchive, saveClusterBackupSchedule, updateS3Target,
   type BackupRun, type BuildImageArchiveConfig, type ClusterBackupSchedule, type S3Target,
 } from '@/lib/extras'
+import { githubManifestPostAction } from '@/lib/github-manifest'
 import { keys, useAction, useGithubApp, useGrants, useStatus, useTokens, useUsers } from '@/lib/queries'
 import { userRoleLabel } from '@/lib/status'
 import { copy, formatBytes, timeAgo, tsDate } from '@/lib/utils'
@@ -152,7 +153,8 @@ export function GithubSettings() {
             <Button onClick={() => begin.mutate(undefined)} disabled={begin.isPending}>Create GitHub App</Button>
             {manifest && (
               <>
-                <form ref={formRef} action={`${manifest.postUrl}?state=${encodeURIComponent(manifest.state)}`} method="post" target={isMock ? '_blank' : undefined}>
+                {/* postUrl from the API may already include ?state=; set once so GitHub echoes the stored token */}
+                <form ref={formRef} action={githubManifestPostAction(manifest.postUrl, manifest.state)} method="post" target={isMock ? '_blank' : undefined}>
                   <input type="hidden" name="manifest" value={manifest.json} />
                 </form>
                 <CopyBox label="Manifest" text={manifest.json} />

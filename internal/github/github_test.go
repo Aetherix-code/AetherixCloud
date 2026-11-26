@@ -189,7 +189,8 @@ func newModule(t *testing.T) (*Module, *fakeGH, store.Store) {
 	require.NoError(t, err)
 	gh := newFakeGH(t)
 	m := &Module{Store: st, Key: key, Self: "m1", APIBase: gh.srv.URL, WebBase: "https://github.example",
-		DashboardURL: func(context.Context) string { return "https://ax.example.com" }}
+		DashboardURL:      func(context.Context) string { return "https://ax.example.com" },
+		ManifestStateWait: -1} // no Corrosion-lag poll in unit tests
 	return m, gh, st
 }
 
@@ -248,9 +249,10 @@ func TestManifestFlowFull(t *testing.T) {
 	require.Equal(t, "ax-test", done.Msg.App.Slug)
 	require.Equal(t, "https://ax.example.com/api/github/webhook", done.Msg.App.WebhookUrl)
 
-	// state is single-use
-	_, err = svc.CompleteManifestSetup(ctx, connect.NewRequest(&v1.CompleteManifestSetupRequest{Code: "CODE", State: resp.Msg.State}))
-	require.Error(t, err)
+	// Retry is idempotent (GitHub may re-hit the callback).
+	again, err := svc.CompleteManifestSetup(ctx, connect.NewRequest(&v1.CompleteManifestSetupRequest{Code: "CODE", State: resp.Msg.State}))
+	require.NoError(t, err)
+	require.EqualValues(t, 4242, again.Msg.App.AppId)
 
 	// credentials are encrypted at rest
 	rec, err := st.Get(ctx, store.TableSettings, appSettingID)
@@ -278,6 +280,53 @@ func TestExpiredManifestState(t *testing.T) {
 	m.Now = func() time.Time { return time.Now().Add(2 * time.Hour) }
 	_, _, err = m.CompleteManifest(context.Background(), "CODE", state)
 	require.ErrorContains(t, err, "expired")
+}
+
+func TestManifestExchangeFailureKeepsState(t *testing.T) {
+	m, _, _ := newModule(t)
+	ctx := context.Background()
+	_, _, state, err := m.BeginManifest(ctx, "https://ax.example.com", "")
+	require.NoError(t, err)
+	_, _, err = m.CompleteManifest(ctx, "BAD", state)
+	require.Error(t, err)
+	// State must still be pending so a fresh Begin is not required after a
+	// failed exchange (old code deleted first and caused "already used").
+	cfg, _, err := m.CompleteManifest(ctx, "CODE", state)
+	require.NoError(t, err)
+	require.EqualValues(t, 4242, cfg.AppID)
+}
+
+func TestManifestCallbackIdempotentHTTP(t *testing.T) {
+	m, _, _ := newModule(t)
+	_, _, state, err := m.BeginManifest(context.Background(), "https://ax.example.com", "")
+	require.NoError(t, err)
+	h := m.Handlers(nil)[ManifestCallbackPath]
+	req := httptest.NewRequest(http.MethodGet, ManifestCallbackPath+"?code=CODE&state="+state, nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusFound, rr.Code)
+	require.Contains(t, rr.Header().Get("Location"), "/apps/ax-test/installations/new")
+
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, req)
+	require.Equal(t, http.StatusFound, rr2.Code, "retried callback must not 400")
+	require.Contains(t, rr2.Header().Get("Location"), "/apps/ax-test/installations/new")
+}
+
+func TestManifestStateAppearsAfterLag(t *testing.T) {
+	m, _, st := newModule(t)
+	m.ManifestStateWait = 2 * time.Second
+	state := "laggedtoken"
+	key := manifestPrefix + state
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		_ = store.PutJSON(context.Background(), st, store.TableSettings, key, nil,
+			manifestState{Expires: time.Now().Add(time.Hour).Unix(), BaseURL: "https://ax.example.com"})
+	}()
+	cfg, base, err := m.CompleteManifest(context.Background(), "CODE", state)
+	require.NoError(t, err)
+	require.Equal(t, "https://ax.example.com", base)
+	require.EqualValues(t, 4242, cfg.AppID)
 }
 
 // ---- API client + service RPCs

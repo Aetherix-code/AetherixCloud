@@ -57,6 +57,10 @@ type Module struct {
 	Trigger func()
 	Logger  *slog.Logger
 	Now     func() time.Time
+	// ManifestStateWait overrides how long CompleteManifest polls for a state
+	// row after Begin (Corrosion lag). Zero uses the default; negative disables
+	// the wait (tests).
+	ManifestStateWait time.Duration
 
 	mu       sync.Mutex
 	cli      *Client
