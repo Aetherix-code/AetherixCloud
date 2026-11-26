@@ -392,11 +392,12 @@ func (w *Worker) execute(ctx context.Context, b *v1.Build, svc *v1.Service, job 
 		return
 	}
 	b.Provider = string(res.Provider)
-	w.finish(ctx, b, svc, job, res.Image, res.Digest, log)
+	w.finish(ctx, b, svc, job, res, log)
 }
 
 // finish records a successful build of image and rolls it out.
-func (w *Worker) finish(ctx context.Context, b *v1.Build, svc *v1.Service, job *JobMeta, image, digest string, log io.Writer) {
+func (w *Worker) finish(ctx context.Context, b *v1.Build, svc *v1.Service, job *JobMeta, res *Result, log io.Writer) {
+	image, digest := res.Image, res.Digest
 	b.Image, b.Status, b.FinishedAt = image, StatusSucceeded, timestamppb.Now()
 	_ = PutBuild(ctx, w.Store, b)
 	fmt.Fprintf(log, "==> build succeeded: %s\n", image)
@@ -413,6 +414,16 @@ func (w *Worker) finish(ctx context.Context, b *v1.Build, svc *v1.Service, job *
 	w.archiveImage(ctx, cur, image, digest, log)
 
 	cur.Spec.Image = image
+	// Persist Railpack-detected start command when the user left it blank so
+	// the dashboard shows what the image will run.
+	if res.Detected != nil && res.Detected.StartCommand != "" {
+		if cur.Spec.Build == nil {
+			cur.Spec.Build = &v1.BuildSpec{}
+		}
+		if cur.Spec.Build.StartCommand == "" {
+			cur.Spec.Build.StartCommand = res.Detected.StartCommand
+		}
+	}
 	cur.UpdatedAt = timestamppb.Now()
 	_ = store.PutService(ctx, w.Store, cur) // keep the built image on the service even if the rollout fails
 	dep, err := w.Deploy(ctx, w.Store, cur, deploy.StartOptions{CommitSHA: job.SHA, CommitMsg: job.Message,
@@ -551,7 +562,7 @@ func (w *Worker) RunImageUpload(ctx context.Context, svc *v1.Service, image io.R
 		w.fail(ctx, b, job, out, err)
 		return b, err
 	}
-	w.finish(ctx, b, svc, job, ref, digest, out)
+	w.finish(ctx, b, svc, job, &Result{Provider: ProviderImage, Image: ref, Digest: digest}, out)
 	return b, nil
 }
 

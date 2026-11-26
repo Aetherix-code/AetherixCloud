@@ -64,6 +64,7 @@ func TestApplyInstallsBinaries(t *testing.T) {
 		DownloadBase: srv.URL,
 		BinDir:       binDir,
 		SkipRestart:  true,
+		SkipHostDeps: true,
 		HTTPClient:   srv.Client(),
 	}))
 	require.FileExists(t, filepath.Join(binDir, "aetherixd"))

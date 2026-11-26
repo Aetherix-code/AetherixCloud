@@ -1,8 +1,8 @@
 [Unit]
 Description=AetherixCloud node daemon (aetherixd)
 Documentation=https://github.com/Aetherix-code/AetherixCloud
-After=network-online.target docker.service
-Wants=network-online.target
+After=network-online.target docker.service buildkitd.service
+Wants=network-online.target buildkitd.service
 Requires=docker.service
 
 [Service]
@@ -15,6 +15,10 @@ LimitNOFILE=1048576
 # WireGuard, Docker and the embedded registry need root (or CAP_NET_ADMIN +
 # docker group). The install script runs the unit as root.
 Environment=AX_CADDY_BIN=/usr/local/bin/caddy
+# Builder tooling (Railpack + BuildKit). Keep the frontend image tag in sync
+# with the installed `railpack` CLI (see deploy/install.sh).
+Environment=AX_BUILDKIT_ADDR=unix:///run/buildkit/buildkitd.sock
+Environment=AX_RAILPACK_FRONTEND=ghcr.io/railwayapp/railpack-frontend:v0.43.1
 # Optional overrides (uncomment or drop an override in
 # /etc/systemd/system/aetherixd.service.d/):
 # Environment=AX_ACME_EMAIL=ops@example.com

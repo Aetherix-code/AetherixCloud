@@ -2,8 +2,8 @@
 # AetherixCloud node installer.
 #
 # Installs Docker (if missing), aetherixd + ax, Corrosion, Caddy (Aetherix
-# build when available), the systemd unit, then optionally bootstraps or
-# joins a cluster.
+# build when available), BuildKit + Railpack (Dockerfile-less GitHub builds),
+# the systemd units, then optionally bootstraps or joins a cluster.
 #
 # Usage (matches CreateJoinToken's InstallCommand):
 #   curl -fsSL https://raw.githubusercontent.com/Aetherix-code/AetherixCloud/main/deploy/install.sh | sudo sh -s -- --init
@@ -23,6 +23,7 @@
 #   --skip-docker          do not install or reconfigure Docker
 #   --skip-corrosion       do not install Corrosion (daemon falls back to sqlite)
 #   --skip-caddy           do not install Caddy (ingress disabled on this node)
+#   --skip-builder         do not install BuildKit / Railpack (no auto-builds)
 #   --bin-dir DIR          install binaries here (default: /usr/local/bin)
 #   --data-dir DIR         aetherix data dir (default: /var/lib/aetherix)
 #   --help
@@ -32,6 +33,8 @@
 #   AETHERIX_VERSION         same as --version
 #   AETHERIX_DOWNLOAD_BASE   base URL for release assets (overrides GitHub)
 #   CORROSION_VERSION        Corrosion tag (default: v1.0.0)
+#   BUILDKIT_VERSION         BuildKit tag without v (default: 0.35.1)
+#   RAILPACK_VERSION         Railpack tag without v (default: 0.43.1)
 #   AETHERIX_CADDY_URL       direct URL to a caddy binary or .tar.gz
 #
 # Must be runnable under plain `sh` (the curl | sh path ignores the shebang).
@@ -43,10 +46,13 @@ REPO="${AETHERIX_REPO:-Aetherix-code/AetherixCloud}"
 VERSION="${AETHERIX_VERSION:-latest}"
 CHANNEL="latest"
 CORROSION_VERSION="${CORROSION_VERSION:-v1.0.0}"
+BUILDKIT_VERSION="${BUILDKIT_VERSION:-0.35.1}"
+RAILPACK_VERSION="${RAILPACK_VERSION:-0.43.1}"
 BIN_DIR="/usr/local/bin"
 DATA_DIR="/var/lib/aetherix"
 UNIT_DIR="/etc/systemd/system"
 DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
+BUILDKIT_CONFIG_DIR="/etc/buildkit"
 
 DO_INIT=0
 DO_JOIN=0
@@ -59,6 +65,7 @@ NO_START=0
 SKIP_DOCKER=0
 SKIP_CORROSION=0
 SKIP_CADDY=0
+SKIP_BUILDER=0
 ADVERTISE=""
 
 usage() {
@@ -133,6 +140,7 @@ while [ "$#" -gt 0 ]; do
     --skip-docker) SKIP_DOCKER=1 ;;
     --skip-corrosion) SKIP_CORROSION=1 ;;
     --skip-caddy) SKIP_CADDY=1 ;;
+    --skip-builder) SKIP_BUILDER=1 ;;
     --bin-dir)
       [ "$#" -ge 2 ] || err "--bin-dir requires a value"
       BIN_DIR="$2"
@@ -165,8 +173,8 @@ fi
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH_RAW="$(uname -m)"
 case "$ARCH_RAW" in
-  x86_64|amd64) ARCH="amd64"; CORRO_ARCH="x86_64"; CADDY_ARCH="amd64" ;;
-  aarch64|arm64) ARCH="arm64"; CORRO_ARCH="aarch64"; CADDY_ARCH="arm64" ;;
+  x86_64|amd64) ARCH="amd64"; CORRO_ARCH="x86_64"; CADDY_ARCH="amd64"; RP_ARCH="x86_64" ;;
+  aarch64|arm64) ARCH="arm64"; CORRO_ARCH="aarch64"; CADDY_ARCH="arm64"; RP_ARCH="arm64" ;;
   *) err "unsupported architecture: $ARCH_RAW (need amd64 or arm64)" ;;
 esac
 [ "$OS" = "linux" ] || err "install.sh targets Linux VPS hosts (got $OS); use 'ax dev' on a laptop"
@@ -279,15 +287,15 @@ install_pkgs() {
   if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq ca-certificates curl iptables wireguard-tools >/dev/null
+    apt-get install -y -qq ca-certificates curl git iptables wireguard-tools >/dev/null
   elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y ca-certificates curl iptables wireguard-tools >/dev/null
+    dnf install -y ca-certificates curl git iptables wireguard-tools >/dev/null
   elif command -v yum >/dev/null 2>&1; then
-    yum install -y ca-certificates curl iptables wireguard-tools >/dev/null
+    yum install -y ca-certificates curl git iptables wireguard-tools >/dev/null
   elif command -v apk >/dev/null 2>&1; then
-    apk add --no-cache ca-certificates curl iptables wireguard-tools >/dev/null
+    apk add --no-cache ca-certificates curl git iptables wireguard-tools >/dev/null
   else
-    log "warning: unknown package manager; ensure curl, iptables and wireguard-tools are installed"
+    log "warning: unknown package manager; ensure curl, git, iptables and wireguard-tools are installed"
   fi
 }
 
@@ -399,6 +407,123 @@ install_caddy() {
   log "warning: Caddy not installed; set AX_CADDY_BIN or rebuild with deploy/caddy/build.sh"
 }
 
+install_builder() {
+  # BuildKit + Railpack power Dockerfile-less GitHub builds (auto-detect when
+  # no Dockerfile / compose build: is present). See docs/github-app.md.
+  if [ "$SKIP_BUILDER" -eq 1 ]; then
+    log "skipping BuildKit/Railpack (--skip-builder); Dockerfile-less builds will fail"
+    return 0
+  fi
+  need_cmd curl
+  need_cmd sha256sum
+
+  need_bk=1
+  if command -v buildkitd >/dev/null 2>&1 && command -v buildctl >/dev/null 2>&1; then
+    if buildkitd --version 2>/dev/null | grep -q "${BUILDKIT_VERSION}" \
+      && buildctl --version 2>/dev/null | grep -q "${BUILDKIT_VERSION}"; then
+      need_bk=0
+      log "BuildKit v${BUILDKIT_VERSION} already installed"
+    fi
+  fi
+  if [ "$need_bk" -eq 1 ]; then
+    bk_url="https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-${ARCH}.tar.gz"
+    log "downloading BuildKit v${BUILDKIT_VERSION} ($bk_url)"
+    download "$bk_url" "$WORK/buildkit.tgz"
+    mkdir -p "$WORK/buildkit"
+    tar -xzf "$WORK/buildkit.tgz" -C "$WORK/buildkit"
+    # Archive layout: bin/buildkitd bin/buildctl …
+    find "$WORK/buildkit" -type f \( -name buildkitd -o -name buildctl \) -exec install -m 0755 {} "$BIN_DIR/" \;
+    command -v buildkitd >/dev/null 2>&1 || err "buildkitd missing after install"
+    command -v buildctl >/dev/null 2>&1 || err "buildctl missing after install"
+    log "installed buildkitd and buildctl"
+  fi
+
+  need_rp=1
+  if command -v railpack >/dev/null 2>&1; then
+    if railpack --version 2>/dev/null | grep -q "${RAILPACK_VERSION}"; then
+      need_rp=0
+      log "Railpack v${RAILPACK_VERSION} already installed"
+    fi
+  fi
+  if [ "$need_rp" -eq 1 ]; then
+    rp="railpack-v${RAILPACK_VERSION}-${RP_ARCH}-unknown-linux-musl.tar.gz"
+    rp_base="https://github.com/railwayapp/railpack/releases/download/v${RAILPACK_VERSION}"
+    log "downloading Railpack v${RAILPACK_VERSION}"
+    download "${rp_base}/${rp}" "$WORK/${rp}"
+    download "${rp_base}/checksums.txt" "$WORK/railpack-checksums.txt"
+    (
+      cd "$WORK"
+      grep " ${rp}\$" railpack-checksums.txt | sha256sum -c -
+    ) || err "Railpack checksum mismatch"
+    tar -xzf "$WORK/${rp}" -C "$WORK" railpack
+    install -m 0755 "$WORK/railpack" "$BIN_DIR/railpack"
+    railpack --version >/dev/null 2>&1 || err "railpack not runnable after install"
+    log "installed railpack"
+  fi
+
+  mkdir -p "$BUILDKIT_CONFIG_DIR" "$UNIT_DIR"
+  script_dir="$(CDPATH= cd -- "$(dirname "$0")" 2>/dev/null && pwd)" || script_dir=""
+  if [ -n "$script_dir" ] && [ -f "$script_dir/buildkitd.toml" ]; then
+    install -m 0644 "$script_dir/buildkitd.toml" "$BUILDKIT_CONFIG_DIR/buildkitd.toml"
+  else
+    cat >"$BUILDKIT_CONFIG_DIR/buildkitd.toml" <<'EOF'
+[registry."127.0.0.1:5000"]
+  http = true
+  insecure = true
+
+[worker.oci]
+  gc = true
+  [[worker.oci.gcpolicy]]
+    keepBytes = 10737418240
+    all = true
+EOF
+  fi
+  if [ -n "$script_dir" ] && [ -f "$script_dir/buildkitd.service" ]; then
+    install -m 0644 "$script_dir/buildkitd.service" "$UNIT_DIR/buildkitd.service"
+  else
+    cat >"$UNIT_DIR/buildkitd.service" <<EOF
+[Unit]
+Description=AetherixCloud BuildKit daemon (builder nodes)
+Documentation=https://github.com/${REPO}
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=${BIN_DIR}/buildkitd --config ${BUILDKIT_CONFIG_DIR}/buildkitd.toml --addr unix:///run/buildkit/buildkitd.sock --root /var/lib/buildkit
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+LimitNOFILE=1048576
+RuntimeDirectory=buildkit
+StateDirectory=buildkit
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  fi
+  # When BIN_DIR is non-default, point the unit at the installed binary.
+  if [ "$BIN_DIR" != "/usr/local/bin" ]; then
+    mkdir -p "$UNIT_DIR/buildkitd.service.d"
+    cat >"$UNIT_DIR/buildkitd.service.d/override.conf" <<EOF
+[Service]
+ExecStart=
+ExecStart=${BIN_DIR}/buildkitd --config ${BUILDKIT_CONFIG_DIR}/buildkitd.toml --addr unix:///run/buildkit/buildkitd.sock --root /var/lib/buildkit
+EOF
+  fi
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload
+    if [ "$NO_START" -eq 0 ]; then
+      systemctl enable --now buildkitd >/dev/null 2>&1 || systemctl restart buildkitd || true
+      log "buildkitd enabled and started"
+    else
+      systemctl enable buildkitd >/dev/null 2>&1 || true
+      log "buildkitd unit installed (not started; --no-start)"
+    fi
+  fi
+}
+
 install_unit() {
   mkdir -p "$UNIT_DIR"
   # Prefer the unit shipped next to this script when installed from a checkout;
@@ -411,8 +536,8 @@ install_unit() {
 [Unit]
 Description=AetherixCloud node daemon (aetherixd)
 Documentation=https://github.com/${REPO}
-After=network-online.target docker.service
-Wants=network-online.target
+After=network-online.target docker.service buildkitd.service
+Wants=network-online.target buildkitd.service
 Requires=docker.service
 
 [Service]
@@ -423,19 +548,28 @@ RestartSec=5
 TimeoutStopSec=60
 LimitNOFILE=1048576
 Environment=AX_CADDY_BIN=${BIN_DIR}/caddy
+Environment=AX_BUILDKIT_ADDR=unix:///run/buildkit/buildkitd.sock
+Environment=AX_RAILPACK_FRONTEND=ghcr.io/railwayapp/railpack-frontend:v${RAILPACK_VERSION}
 
 [Install]
 WantedBy=multi-user.target
 EOF
   fi
+  # Always drop builder env so upgrades pick up the pinned frontend tag even
+  # when the unit file came from an older checkout.
+  mkdir -p "$UNIT_DIR/aetherixd.service.d"
+  cat >"$UNIT_DIR/aetherixd.service.d/builder.conf" <<EOF
+[Service]
+Environment=AX_CADDY_BIN=${BIN_DIR}/caddy
+Environment=AX_BUILDKIT_ADDR=unix:///run/buildkit/buildkitd.sock
+Environment=AX_RAILPACK_FRONTEND=ghcr.io/railwayapp/railpack-frontend:v${RAILPACK_VERSION}
+EOF
   # Override data-dir / binary path when non-default.
   if [ "$DATA_DIR" != "/var/lib/aetherix" ] || [ "$BIN_DIR" != "/usr/local/bin" ]; then
-    mkdir -p "$UNIT_DIR/aetherixd.service.d"
     cat >"$UNIT_DIR/aetherixd.service.d/override.conf" <<EOF
 [Service]
 ExecStart=
 ExecStart=${BIN_DIR}/aetherixd run --data-dir ${DATA_DIR}
-Environment=AX_CADDY_BIN=${BIN_DIR}/caddy
 EOF
   fi
   if command -v systemctl >/dev/null 2>&1; then
@@ -517,6 +651,7 @@ install_docker
 install_aetherix_bins
 install_corrosion
 install_caddy
+install_builder
 install_unit
 bootstrap_or_join
 log "done."

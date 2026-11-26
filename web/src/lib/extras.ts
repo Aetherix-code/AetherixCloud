@@ -44,6 +44,29 @@ export async function fetchMetrics(serviceId: string): Promise<MetricsResponse |
   }
 }
 
+/** Response from GET /api/builds/plan?service=… (Railpack / Dockerfile preview). */
+export type BuildPlanResponse = {
+  commit?: string
+  plan?: {
+    provider?: string
+    reason?: string
+    dockerfile?: string
+    root_dir?: string
+  }
+  detected?: {
+    providers?: string[]
+    language?: string
+    packages?: Record<string, string>
+    install_commands?: string[]
+    build_commands?: string[]
+    start_command?: string
+  }
+}
+
+export async function fetchBuildPlan(serviceId: string): Promise<BuildPlanResponse> {
+  return getJSON(`/api/builds/plan?service=${encodeURIComponent(serviceId)}`)
+}
+
 export type S3Target = {
   id: string
   name: string

@@ -1,0 +1,19 @@
+[Unit]
+Description=AetherixCloud BuildKit daemon (builder nodes)
+Documentation=https://github.com/Aetherix-code/AetherixCloud
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/buildkitd --config /etc/buildkit/buildkitd.toml --addr unix:///run/buildkit/buildkitd.sock --root /var/lib/buildkit
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+LimitNOFILE=1048576
+RuntimeDirectory=buildkit
+StateDirectory=buildkit
+
+[Install]
+WantedBy=multi-user.target

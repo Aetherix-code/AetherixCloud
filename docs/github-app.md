@@ -25,7 +25,9 @@ Detection order (`internal/build`):
 1. Explicit service setting (`dockerfile` | `railpack` | `image`)
 2. Dockerfile at the configured path
 3. Compose `build:` sections
-4. **Railpack** (stack detect → BuildKit frontend)
+4. **Railpack** — zero-config builder for repos without a Dockerfile (Node, Python, Go, static, …). Same idea as Railway’s Railpack: `railpack prepare` writes a plan, BuildKit’s `railpack-frontend` turns it into an image.
+
+Builder nodes need BuildKit + the `railpack` CLI. Fresh installs get them from `deploy/install.sh` (unless `--skip-builder`). **Cluster upgrades** also sync host deps (`upgrade.SyncHostDeps`): BuildKit/Railpack binaries, `buildkitd` unit/config, and `AX_RAILPACK_FRONTEND` — so bumping pinned versions in a release is enough for existing nodes. Same path runs once on daemon start (idempotent). Opt out with `AX_SKIP_HOST_DEPS=1`. Pin versions via `BUILDKIT_VERSION` / `RAILPACK_VERSION` (install) or `upgrade.DefaultBuildkitVersion` / `DefaultRailpackVersion` (upgrade).
 
 Images land in the node’s embedded registry (`127.0.0.1:5000` / mesh `:5000`), then a deployment is created. Commit statuses/checks report progress. Optional PR preview hostnames: `pr-<n>-<service>.<domain>`.
 

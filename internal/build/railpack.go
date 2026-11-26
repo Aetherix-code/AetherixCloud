@@ -16,9 +16,11 @@ const (
 	RailpackPlanFile = "railpack-plan.json"
 	RailpackInfoFile = "railpack-info.json"
 	// DefaultFrontendImage is the BuildKit gateway frontend that turns a
-	// railpack-plan.json into LLB. Pin a tag matching the installed CLI with
-	// AX_RAILPACK_FRONTEND (see deploy/dev/Dockerfile.node).
-	DefaultFrontendImage = "ghcr.io/railwayapp/railpack-frontend"
+	// railpack-plan.json into LLB. Tag MUST match the installed `railpack`
+	// CLI (deploy/install.sh and deploy/dev/Dockerfile.node pin the same).
+	// Keep in sync with upgrade.DefaultRailpackVersion / deploy/install.sh.
+	DefaultFrontendImage   = "ghcr.io/railwayapp/railpack-frontend:v0.43.1"
+	DefaultRailpackVersion = "0.43.1"
 )
 
 // DetectedStep is one Railpack build step.

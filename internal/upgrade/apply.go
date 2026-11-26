@@ -27,6 +27,8 @@ type ApplyOptions struct {
 	Logger       *slog.Logger
 	// SkipRestart only installs binaries.
 	SkipRestart bool
+	// SkipHostDeps skips BuildKit/Railpack (and future) host tooling sync.
+	SkipHostDeps bool
 	// Restart hooks (optional). Defaults to DefaultRestart.
 	Restart func(log *slog.Logger) error
 }
@@ -106,6 +108,15 @@ func Apply(ctx context.Context, opt ApplyOptions) error {
 		return fmt.Errorf("install ax: %w", err)
 	}
 	log.Info("binaries installed", "dir", opt.BinDir, "version", version)
+	if !opt.SkipHostDeps {
+		log.Info("syncing host deps (BuildKit, Railpack, …)")
+		if err := SyncHostDeps(ctx, HostOptions{
+			BinDir: opt.BinDir, Arch: opt.Arch, HTTPClient: opt.HTTPClient,
+			Logger: log, ReleaseDir: extract,
+		}); err != nil {
+			return fmt.Errorf("host deps: %w", err)
+		}
+	}
 	if opt.SkipRestart {
 		return nil
 	}

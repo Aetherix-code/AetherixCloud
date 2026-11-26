@@ -10,6 +10,9 @@ The join token RPC embeds this installer URL (`internal/api/machine_svc.go`):
 # First machine — create the cluster
 curl -fsSL https://raw.githubusercontent.com/Aetherix-code/AetherixCloud/main/deploy/install.sh | sudo sh -s -- --init --advertise YOUR_PUBLIC_IP
 
+# Installs Docker, Corrosion, Caddy, BuildKit, and Railpack (Dockerfile-less
+# GitHub builds). Pass --skip-builder to omit BuildKit/Railpack.
+
 # Additional machines — token from the dashboard or CLI (valid ~1 hour)
 curl -fsSL https://raw.githubusercontent.com/Aetherix-code/AetherixCloud/main/deploy/install.sh | sudo sh -s -- --join 'axjoin1.…'
 ```
@@ -23,7 +26,7 @@ sudo aetherixd init --advertise YOUR_PUBLIC_IP
 sudo systemctl enable --now aetherixd
 ```
 
-`install.sh` installs Docker (with mesh `insecure-registries`), `aetherixd`/`ax`, Corrosion, Caddy, and `deploy/aetherixd.service`.
+`install.sh` installs Docker (with mesh `insecure-registries`), `aetherixd`/`ax`, Corrosion, Caddy, BuildKit, Railpack, and systemd units. Later **dashboard upgrades** refresh `aetherixd`/`ax` and re-sync host tooling (BuildKit/Railpack versions, units, env) without re-running install.
 
 ## CLI remote bootstrap
 

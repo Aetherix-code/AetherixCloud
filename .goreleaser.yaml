@@ -75,6 +75,8 @@ archives:
     wrap_in_directory: false
     files:
       - deploy/aetherixd.service
+      - deploy/buildkitd.service
+      - deploy/buildkitd.toml
       - deploy/install.sh
       - deploy/docker-daemon.json
       - README.md

@@ -274,6 +274,15 @@ func (d *Daemon) Run(ctx context.Context) error {
 		heartbeat(ctx, st, state.MachineID, cfg.Version, goruntime.GOARCH)
 		return nil
 	})
+	spawn("host-deps", func(ctx context.Context) error {
+		// Idempotent: installs/refreshes BuildKit + Railpack (and future host
+		// tools) so the first upgrade onto a release that adds them still
+		// provisions after restart — Apply also runs this before restart.
+		if err := upgrade.SyncHostDeps(ctx, upgrade.HostOptions{Arch: goruntime.GOARCH, Logger: log}); err != nil {
+			log.Warn("host deps sync", "err", err)
+		}
+		return nil
+	})
 	spawn("upgrade", func(ctx context.Context) error {
 		w := &upgrade.Watcher{Store: st, Self: state.MachineID, Version: cfg.Version, Arch: goruntime.GOARCH, Logger: log}
 		return w.Run(ctx)

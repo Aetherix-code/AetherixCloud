@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Globe, HardDrive, Hammer, Pencil, Plus, RotateCw, Trash2 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Badge } from '@/components/ui/badge'
@@ -10,7 +11,7 @@ import { VolumeFields } from '@/features/volume-form'
 import { DeployStrategy, PortProtocol, ReplicaState, type Domain, type Replica, type Service, type ServicePort, type ServiceSpec, type VolumeMount } from '@/gen/aetherix/v1/types_pb'
 import { api } from '@/lib/api'
 import { keys, useAction, useMachines } from '@/lib/queries'
-import { detectPlan } from '@/lib/railpack'
+import { detectPlan, loadBuildPlan } from '@/lib/railpack'
 import { emptyVolume, volumeFromSpec, volumeToSpec, volumeValid, type VolumeDraft } from '@/lib/volumes'
 import { formatBytes, tsDate } from '@/lib/utils'
 
@@ -125,7 +126,15 @@ function BuildSection({ service }: { service: Service }) {
     watch: (b?.watchPaths ?? []).join(', '),
   })
   const save = useSpecUpdate(service)
-  const plan = detectPlan(service)
+  const fallback = detectPlan(service)
+  const planQ = useQuery({
+    queryKey: ['build-plan', service.id, f.builder, f.context, f.dockerfile, f.buildCommand, f.startCommand],
+    queryFn: () => loadBuildPlan(service),
+    enabled: !!service.spec?.source?.github,
+    staleTime: 60_000,
+    retry: false,
+  })
+  const plan = planQ.data ?? fallback
   if (!service.spec?.source?.github) return null
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const next = { ...f, [k]: e.target.value }
@@ -137,9 +146,14 @@ function BuildSection({ service }: { service: Service }) {
     setF(next)
   }
   return (
-    <Section title="Build & monorepo" icon={<Hammer className="size-4" />} description="Point this service at a subdirectory of the repo. Only matching pushes rebuild it.">
+    <Section title="Build & monorepo" icon={<Hammer className="size-4" />} description="No Dockerfile needed — Auto uses Railpack. Point at a subdirectory for monorepos; only matching pushes rebuild.">
       <div className="rounded-md border bg-muted/40 p-3 text-sm" aria-label="Detected build plan">
-        <div className="mb-2 flex items-center gap-2 font-medium">Detected plan <Badge tone="info">{plan.provider}</Badge>{plan.source === 'heuristic' && <Badge>preview</Badge>}</div>
+        <div className="mb-2 flex items-center gap-2 font-medium">
+          Detected plan <Badge tone="info">{plan.provider}</Badge>
+          {plan.source === 'heuristic' && <Badge>preview</Badge>}
+          {plan.source === 'railpack' && <Badge tone="success">live</Badge>}
+          {planQ.isFetching && <span className="text-xs text-muted-foreground">refreshing…</span>}
+        </div>
         {plan.provider === 'railpack' ? (
           <dl className="grid grid-cols-[6rem_1fr] gap-y-1 text-xs">
             <dt className="text-muted-foreground">Language</dt><dd>{plan.language} {plan.version}</dd>
@@ -150,7 +164,14 @@ function BuildSection({ service }: { service: Service }) {
         ) : (
           <p className="text-xs text-muted-foreground">Building with {plan.build ?? 'the configured Dockerfile'}.</p>
         )}
-        {plan.source === 'heuristic' && <p className="mt-2 text-xs text-muted-foreground">Estimated from the repository name; the real Railpack plan is shown after the first build. Override any command below.</p>}
+        {plan.source === 'heuristic' && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Estimated until a builder runs Railpack. Override commands below, or wait for the live plan.
+          </p>
+        )}
+        {plan.reason && plan.source === 'railpack' && (
+          <p className="mt-2 text-xs text-muted-foreground">{plan.reason}</p>
+        )}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Builder"><Select value={f.builder} onChange={set('builder')}><option value="">Auto-detect</option><option value="dockerfile">Dockerfile</option><option value="railpack">Railpack</option></Select></Field>
