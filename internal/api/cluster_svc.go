@@ -74,6 +74,16 @@ func (s *clusterSvc) UpdateCluster(ctx context.Context, req *connect.Request[v1.
 	if req.Msg.Domain != nil {
 		c.Domain = strings.TrimSpace(*req.Msg.Domain)
 	}
+	if req.Msg.DashboardHost != nil {
+		c.DashboardHost = strings.ToLower(strings.TrimSpace(*req.Msg.DashboardHost))
+	}
+	if req.Msg.DashboardPort != nil {
+		p := *req.Msg.DashboardPort
+		if p < 0 || p > 65535 {
+			return nil, errInvalid("dashboard_port must be 0–65535")
+		}
+		c.DashboardPort = p
+	}
 	if err := store.PutCluster(ctx, s.Store, c); err != nil {
 		return nil, internalErr(err)
 	}

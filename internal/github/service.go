@@ -211,3 +211,21 @@ func (s *Service) SetWebhookUrl(ctx context.Context, req *connect.Request[v1.Set
 	}
 	return connect.NewResponse(&v1.SetWebhookUrlResponse{}), nil
 }
+
+// DisconnectApp implements GitHubService: drops cluster credentials and
+// installation cache. confirm must be true.
+func (s *Service) DisconnectApp(ctx context.Context, req *connect.Request[v1.DisconnectAppRequest]) (*connect.Response[v1.DisconnectAppResponse], error) {
+	if !req.Msg.Confirm {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("confirm must be true"))
+	}
+	if _, err := s.M.LoadApp(ctx); err != nil {
+		if store.IsNotFound(err) {
+			return connect.NewResponse(&v1.DisconnectAppResponse{}), nil
+		}
+		return nil, rpcErr(err)
+	}
+	if err := s.M.ClearApp(ctx); err != nil {
+		return nil, rpcErr(err)
+	}
+	return connect.NewResponse(&v1.DisconnectAppResponse{}), nil
+}

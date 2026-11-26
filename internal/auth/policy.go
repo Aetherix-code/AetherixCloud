@@ -74,6 +74,7 @@ var explicit = map[string]Level{
 	"GitHubService/BeginManifestSetup":    LevelAdmin,
 	"GitHubService/CompleteManifestSetup": LevelAdmin,
 	"GitHubService/SetWebhookUrl":         LevelAdmin,
+	"GitHubService/DisconnectApp":         LevelAdmin,
 	"GitHubService/SimulatePush":          LevelDeploy,
 	// reading variables is fine for viewers (secrets are redacted by the API)
 	"ProjectService/ListVariables": LevelRead,

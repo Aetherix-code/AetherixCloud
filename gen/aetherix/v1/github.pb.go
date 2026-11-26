@@ -939,6 +939,86 @@ func (*SetWebhookUrlResponse) Descriptor() ([]byte, []int) {
 	return file_aetherix_v1_github_proto_rawDescGZIP(), []int{17}
 }
 
+type DisconnectAppRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Confirm       bool                   `protobuf:"varint,1,opt,name=confirm,proto3" json:"confirm,omitempty"` // must be true
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DisconnectAppRequest) Reset() {
+	*x = DisconnectAppRequest{}
+	mi := &file_aetherix_v1_github_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DisconnectAppRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DisconnectAppRequest) ProtoMessage() {}
+
+func (x *DisconnectAppRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aetherix_v1_github_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DisconnectAppRequest.ProtoReflect.Descriptor instead.
+func (*DisconnectAppRequest) Descriptor() ([]byte, []int) {
+	return file_aetherix_v1_github_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *DisconnectAppRequest) GetConfirm() bool {
+	if x != nil {
+		return x.Confirm
+	}
+	return false
+}
+
+type DisconnectAppResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DisconnectAppResponse) Reset() {
+	*x = DisconnectAppResponse{}
+	mi := &file_aetherix_v1_github_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DisconnectAppResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DisconnectAppResponse) ProtoMessage() {}
+
+func (x *DisconnectAppResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aetherix_v1_github_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DisconnectAppResponse.ProtoReflect.Descriptor instead.
+func (*DisconnectAppResponse) Descriptor() ([]byte, []int) {
+	return file_aetherix_v1_github_proto_rawDescGZIP(), []int{19}
+}
+
 var File_aetherix_v1_github_proto protoreflect.FileDescriptor
 
 const file_aetherix_v1_github_proto_rawDesc = "" +
@@ -1001,7 +1081,10 @@ const file_aetherix_v1_github_proto_rawDesc = "" +
 	"commit_sha\x18\x02 \x01(\tR\tcommitSha\"(\n" +
 	"\x14SetWebhookUrlRequest\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\"\x17\n" +
-	"\x15SetWebhookUrlResponse2\xf0\x05\n" +
+	"\x15SetWebhookUrlResponse\"0\n" +
+	"\x14DisconnectAppRequest\x12\x18\n" +
+	"\aconfirm\x18\x01 \x01(\bR\aconfirm\"\x17\n" +
+	"\x15DisconnectAppResponse2\xc8\x06\n" +
 	"\rGitHubService\x12A\n" +
 	"\x06GetApp\x12\x1a.aetherix.v1.GetAppRequest\x1a\x1b.aetherix.v1.GetAppResponse\x12e\n" +
 	"\x12BeginManifestSetup\x12&.aetherix.v1.BeginManifestSetupRequest\x1a'.aetherix.v1.BeginManifestSetupResponse\x12n\n" +
@@ -1010,7 +1093,8 @@ const file_aetherix_v1_github_proto_rawDesc = "" +
 	"\x10ListRepositories\x12$.aetherix.v1.ListRepositoriesRequest\x1a%.aetherix.v1.ListRepositoriesResponse\x12S\n" +
 	"\fListBranches\x12 .aetherix.v1.ListBranchesRequest\x1a!.aetherix.v1.ListBranchesResponse\x12S\n" +
 	"\fSimulatePush\x12 .aetherix.v1.SimulatePushRequest\x1a!.aetherix.v1.SimulatePushResponse\x12V\n" +
-	"\rSetWebhookUrl\x12!.aetherix.v1.SetWebhookUrlRequest\x1a\".aetherix.v1.SetWebhookUrlResponseB\xa9\x01\n" +
+	"\rSetWebhookUrl\x12!.aetherix.v1.SetWebhookUrlRequest\x1a\".aetherix.v1.SetWebhookUrlResponse\x12V\n" +
+	"\rDisconnectApp\x12!.aetherix.v1.DisconnectAppRequest\x1a\".aetherix.v1.DisconnectAppResponseB\xa9\x01\n" +
 	"\x0fcom.aetherix.v1B\vGithubProtoP\x01Z<github.com/aetherix/aetherixcloud/gen/aetherix/v1;aetherixv1\xa2\x02\x03AXX\xaa\x02\vAetherix.V1\xca\x02\vAetherix\\V1\xe2\x02\x17Aetherix\\V1\\GPBMetadata\xea\x02\fAetherix::V1b\x06proto3"
 
 var (
@@ -1025,7 +1109,7 @@ func file_aetherix_v1_github_proto_rawDescGZIP() []byte {
 	return file_aetherix_v1_github_proto_rawDescData
 }
 
-var file_aetherix_v1_github_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_aetherix_v1_github_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_aetherix_v1_github_proto_goTypes = []any{
 	(*GetAppRequest)(nil),                 // 0: aetherix.v1.GetAppRequest
 	(*GetAppResponse)(nil),                // 1: aetherix.v1.GetAppResponse
@@ -1045,11 +1129,13 @@ var file_aetherix_v1_github_proto_goTypes = []any{
 	(*SimulatePushResponse)(nil),          // 15: aetherix.v1.SimulatePushResponse
 	(*SetWebhookUrlRequest)(nil),          // 16: aetherix.v1.SetWebhookUrlRequest
 	(*SetWebhookUrlResponse)(nil),         // 17: aetherix.v1.SetWebhookUrlResponse
-	(*timestamppb.Timestamp)(nil),         // 18: google.protobuf.Timestamp
+	(*DisconnectAppRequest)(nil),          // 18: aetherix.v1.DisconnectAppRequest
+	(*DisconnectAppResponse)(nil),         // 19: aetherix.v1.DisconnectAppResponse
+	(*timestamppb.Timestamp)(nil),         // 20: google.protobuf.Timestamp
 }
 var file_aetherix_v1_github_proto_depIdxs = []int32{
 	1,  // 0: aetherix.v1.CompleteManifestSetupResponse.app:type_name -> aetherix.v1.GetAppResponse
-	18, // 1: aetherix.v1.Installation.created_at:type_name -> google.protobuf.Timestamp
+	20, // 1: aetherix.v1.Installation.created_at:type_name -> google.protobuf.Timestamp
 	6,  // 2: aetherix.v1.ListInstallationsResponse.installations:type_name -> aetherix.v1.Installation
 	9,  // 3: aetherix.v1.ListRepositoriesResponse.repositories:type_name -> aetherix.v1.Repository
 	0,  // 4: aetherix.v1.GitHubService.GetApp:input_type -> aetherix.v1.GetAppRequest
@@ -1060,16 +1146,18 @@ var file_aetherix_v1_github_proto_depIdxs = []int32{
 	12, // 9: aetherix.v1.GitHubService.ListBranches:input_type -> aetherix.v1.ListBranchesRequest
 	14, // 10: aetherix.v1.GitHubService.SimulatePush:input_type -> aetherix.v1.SimulatePushRequest
 	16, // 11: aetherix.v1.GitHubService.SetWebhookUrl:input_type -> aetherix.v1.SetWebhookUrlRequest
-	1,  // 12: aetherix.v1.GitHubService.GetApp:output_type -> aetherix.v1.GetAppResponse
-	3,  // 13: aetherix.v1.GitHubService.BeginManifestSetup:output_type -> aetherix.v1.BeginManifestSetupResponse
-	5,  // 14: aetherix.v1.GitHubService.CompleteManifestSetup:output_type -> aetherix.v1.CompleteManifestSetupResponse
-	8,  // 15: aetherix.v1.GitHubService.ListInstallations:output_type -> aetherix.v1.ListInstallationsResponse
-	11, // 16: aetherix.v1.GitHubService.ListRepositories:output_type -> aetherix.v1.ListRepositoriesResponse
-	13, // 17: aetherix.v1.GitHubService.ListBranches:output_type -> aetherix.v1.ListBranchesResponse
-	15, // 18: aetherix.v1.GitHubService.SimulatePush:output_type -> aetherix.v1.SimulatePushResponse
-	17, // 19: aetherix.v1.GitHubService.SetWebhookUrl:output_type -> aetherix.v1.SetWebhookUrlResponse
-	12, // [12:20] is the sub-list for method output_type
-	4,  // [4:12] is the sub-list for method input_type
+	18, // 12: aetherix.v1.GitHubService.DisconnectApp:input_type -> aetherix.v1.DisconnectAppRequest
+	1,  // 13: aetherix.v1.GitHubService.GetApp:output_type -> aetherix.v1.GetAppResponse
+	3,  // 14: aetherix.v1.GitHubService.BeginManifestSetup:output_type -> aetherix.v1.BeginManifestSetupResponse
+	5,  // 15: aetherix.v1.GitHubService.CompleteManifestSetup:output_type -> aetherix.v1.CompleteManifestSetupResponse
+	8,  // 16: aetherix.v1.GitHubService.ListInstallations:output_type -> aetherix.v1.ListInstallationsResponse
+	11, // 17: aetherix.v1.GitHubService.ListRepositories:output_type -> aetherix.v1.ListRepositoriesResponse
+	13, // 18: aetherix.v1.GitHubService.ListBranches:output_type -> aetherix.v1.ListBranchesResponse
+	15, // 19: aetherix.v1.GitHubService.SimulatePush:output_type -> aetherix.v1.SimulatePushResponse
+	17, // 20: aetherix.v1.GitHubService.SetWebhookUrl:output_type -> aetherix.v1.SetWebhookUrlResponse
+	19, // 21: aetherix.v1.GitHubService.DisconnectApp:output_type -> aetherix.v1.DisconnectAppResponse
+	13, // [13:22] is the sub-list for method output_type
+	4,  // [4:13] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
 	4,  // [4:4] is the sub-list for extension extendee
 	0,  // [0:4] is the sub-list for field type_name
@@ -1086,7 +1174,7 @@ func file_aetherix_v1_github_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aetherix_v1_github_proto_rawDesc), len(file_aetherix_v1_github_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

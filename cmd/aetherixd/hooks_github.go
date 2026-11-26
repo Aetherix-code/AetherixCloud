@@ -148,8 +148,13 @@ func dashboardURL(ctx context.Context, st store.Store) string {
 	if u := os.Getenv("AX_DASHBOARD_URL"); u != "" {
 		return strings.TrimRight(u, "/")
 	}
-	if c, err := store.GetCluster(ctx, st); err == nil && c.Domain != "" {
-		return "https://dashboard." + c.Domain
+	if c, err := store.GetCluster(ctx, st); err == nil {
+		if u := cluster.PublicDashboardURL(c); u != "" {
+			return u
+		}
+		if c.Domain != "" {
+			return "https://dashboard." + c.Domain
+		}
 	}
 	return ""
 }

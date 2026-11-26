@@ -106,6 +106,25 @@ func (m *Module) SaveApp(ctx context.Context, cfg *AppConfig) error {
 	return store.PutJSON(ctx, m.Store, store.TableSettings, appSettingID, nil, cfg)
 }
 
+// ClearApp removes stored App credentials, cached API client, and installation
+// rows. The GitHub App registration itself is left on GitHub.
+func (m *Module) ClearApp(ctx context.Context) error {
+	if err := m.Store.Delete(ctx, store.TableSettings, appSettingID); err != nil && !store.IsNotFound(err) {
+		return err
+	}
+	m.mu.Lock()
+	m.cli, m.cliKey = nil, ""
+	m.mu.Unlock()
+	rows, err := m.Store.List(ctx, store.TableGitHubInstallations, store.Query{})
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		_ = m.Store.Delete(ctx, store.TableGitHubInstallations, r.ID)
+	}
+	return nil
+}
+
 // storeConversion seals and saves the credentials from a manifest conversion.
 func (m *Module) storeConversion(ctx context.Context, mc *ManifestConversion, webhookURL string) (*AppConfig, error) {
 	seal := func(s string) (string, error) { return m.Key.Seal([]byte(s)) }

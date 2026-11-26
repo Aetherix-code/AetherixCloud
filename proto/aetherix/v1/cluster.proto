@@ -61,6 +61,8 @@ message GetStatusResponse {
 message UpdateClusterRequest {
   optional string name = 1;
   optional string domain = 2;
+  optional string dashboard_host = 3;
+  optional int32 dashboard_port = 4;
 }
 message UpdateClusterResponse {
   Cluster cluster = 1;

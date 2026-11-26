@@ -95,7 +95,23 @@ func runIngress(ctx context.Context, deps *daemon.Deps, sh *ingress.StorageHandl
 	}
 	ctl := &ingress.Controller{Store: deps.Store, Leases: lease.NewManager(deps.Store, deps.State.MachineID),
 		Self: deps.State.MachineID, Options: opts, Admin: ingress.NewAdminClient(opts.AdminAddr),
-		Storage: storage, Logger: log}
+		Storage: storage, Logger: log,
+		// When General → public dashboard host is set with port 443, serve it
+		// on Caddy HTTPS and proxy to the local aetherixd TLS listener.
+		Extra: func(ctx context.Context) []ingress.ExtraRoute {
+			cl, err := store.GetCluster(ctx, deps.Store)
+			if err != nil || cl.DashboardHost == "" {
+				return nil
+			}
+			if cluster.EffectiveDashboardPort(cl) != 443 {
+				return nil
+			}
+			return []ingress.ExtraRoute{{
+				Hosts: []string{cl.DashboardHost},
+				Dial:  []string{fmt.Sprintf("127.0.0.1:%d", cluster.DefaultAPIPort)},
+				TLS:   true,
+			}}
+		}}
 	sup := &ingress.Supervisor{Binary: bin, Dir: filepath.Join(os.TempDir(), "aetherix-caddy-"+deps.State.MachineID),
 		AdminAddr: opts.AdminAddr, Logger: log, OnStart: ctl.Invalidate}
 	if dir := os.Getenv("AX_CADDY_DIR"); dir != "" {

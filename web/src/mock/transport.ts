@@ -633,6 +633,11 @@ export function createMockTransport(): Transport {
         db.github.webhookUrl = r.url
         return {}
       },
+      disconnectApp: (r) => {
+        if (!r.confirm) throw Object.assign(new Error('confirm must be true'), { code: 'invalid_argument' })
+        db.github = { configured: false, appId: 0n, slug: '', htmlUrl: '', webhookUrl: '' }
+        return {}
+      },
     })
   })
 }

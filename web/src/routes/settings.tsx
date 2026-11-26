@@ -107,6 +107,10 @@ export function GithubSettings() {
     onSuccess: (r) => setManifest({ json: r.manifestJson, postUrl: r.postUrl, state: r.state }),
   })
   const setHook = useAction(() => api.github.setWebhookUrl({ url: webhook }), { invalidate: [keys.ghApp], success: 'Webhook URL updated' })
+  const disconnect = useAction(() => api.github.disconnectApp({ confirm: true }), {
+    invalidate: [keys.ghApp, keys.installations],
+    success: 'GitHub App disconnected',
+  })
 
   useEffect(() => {
     if (manifest && !isMock) formRef.current?.submit()
@@ -127,7 +131,19 @@ export function GithubSettings() {
                 <Input value={webhook} onChange={(e) => setWebhook(e.target.value)} placeholder="Override webhook URL (e.g. a tunnel for local dev)" aria-label="Webhook URL override" />
                 <Button type="submit" variant="secondary" className="h-9" disabled={!webhook}>Update</Button>
               </form>
-              <Button asChild variant="outline"><a href={`${app.data.htmlUrl}/installations/new`} target="_blank" rel="noreferrer">Install on an account</a></Button>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild variant="outline"><a href={`${app.data.htmlUrl}/installations/new`} target="_blank" rel="noreferrer">Install on an account</a></Button>
+                <Button
+                  variant="destructive"
+                  disabled={disconnect.isPending}
+                  onClick={() => {
+                    if (!confirm('Disconnect the GitHub App from this cluster? Credentials are removed here; the App still exists on GitHub until you delete it there.')) return
+                    disconnect.mutate(undefined)
+                  }}
+                >
+                  Disconnect
+                </Button>
+              </div>
             </CardContent>
           </Card>
           <Card>
@@ -179,8 +195,17 @@ function useRealInstallations(enabled: boolean) {
 // ---------------------------------------------------------------- AI agents
 const SCOPES = ['read', 'deploy', 'admin']
 
+function publicMcpURL(origin: string, cluster?: { dashboardHost?: string; dashboardPort?: number } | null) {
+  const host = cluster?.dashboardHost?.trim()
+  if (!host) return `${origin}/mcp`
+  const port = cluster?.dashboardPort && cluster.dashboardPort > 0 ? cluster.dashboardPort : 443
+  const base = port === 443 ? `https://${host}` : `https://${host}:${port}`
+  return `${base}/mcp`
+}
+
 export function AgentsSettings() {
-  const url = `${window.location.origin}/mcp`
+  const st = useStatus()
+  const url = publicMcpURL(window.location.origin, st.data?.cluster)
   const tokens = useTokens()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -801,30 +826,74 @@ export function GeneralSettings() {
   const c = st.data?.cluster
   const [name, setName] = useState('')
   const [domain, setDomain] = useState('')
+  const [dashHost, setDashHost] = useState('')
+  const [dashPort, setDashPort] = useState(443)
   useEffect(() => {
     if (c) {
       setName(c.name)
       setDomain(c.domain)
+      setDashHost(c.dashboardHost || '')
+      setDashPort(c.dashboardPort > 0 ? c.dashboardPort : 443)
     }
   }, [c])
-  const save = useAction(() => api.cluster.updateCluster({ name, domain }), { invalidate: [keys.status], success: 'Cluster updated' })
+  const save = useAction(
+    () => api.cluster.updateCluster({
+      name,
+      domain,
+      dashboardHost: dashHost.trim().toLowerCase(),
+      dashboardPort: dashHost.trim() ? dashPort : 0,
+    }),
+    { invalidate: [keys.status], success: 'Cluster updated' },
+  )
+  const publicOrigin = dashHost.trim()
+    ? (dashPort === 443 ? `https://${dashHost.trim().toLowerCase()}` : `https://${dashHost.trim().toLowerCase()}:${dashPort}`)
+    : ''
   return (
     <Page>
-      <PageHeader title="General" hideTitle description="Cluster identity used in the sidebar, default hostnames and GitHub webhook URLs." />
+      <PageHeader title="General" hideTitle description="Cluster identity, public dashboard URL for MCP/GitHub, and default app hostnames." />
       {st.isLoading ? <ListSkeleton rows={2} /> : st.error ? <QueryError error={st.error} what="cluster" /> : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Cluster identity</CardTitle>
-            <CardDescription>Network {c?.network || '—'} · serving {st.data?.version || '—'} from {st.data?.servedBy || '—'}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }}>
-              <Field label="Cluster name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-              <Field label="Dashboard domain" hint="Used for default hostnames and the GitHub webhook. Leave empty to use &lt;ip&gt;.sslip.io."><Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="dashboard.example.com" /></Field>
-              <Button type="submit" disabled={save.isPending}>Save changes</Button>
-            </form>
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Cluster identity</CardTitle>
+              <CardDescription>Network {c?.network || '—'} · serving {st.data?.version || '—'} from {st.data?.servedBy || '—'}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); save.mutate(undefined) }}>
+                <Field label="Cluster name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+                <Field label="App domain" hint="Base domain for generated service hostnames. Leave empty to use &lt;ip&gt;.sslip.io.">
+                  <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="apps.example.com" />
+                </Field>
+                <div className="grid gap-3 sm:grid-cols-[1fr_7rem]">
+                  <Field
+                    label="Public dashboard host"
+                    hint="Hostname for the UI, MCP (/mcp), and GitHub webhooks. Point DNS here. Port 443 is served by Caddy on ingress nodes (proxied to aetherixd on 8443)."
+                  >
+                    <Input value={dashHost} onChange={(e) => setDashHost(e.target.value)} placeholder="cloud.example.com" autoComplete="off" />
+                  </Field>
+                  <Field label="Port" hint="443 via Caddy; 8443 = direct aetherixd.">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={dashPort}
+                      onChange={(e) => setDashPort(Math.min(65535, Math.max(1, Number(e.target.value) || 443)))}
+                      disabled={!dashHost.trim()}
+                    />
+                  </Field>
+                </div>
+                {publicOrigin && (
+                  <p className="text-xs text-muted-foreground">
+                    Public origin: <code>{publicOrigin}</code>
+                    {dashPort === 443 ? ' · MCP: ' : ' · MCP (Claude needs 443): '}
+                    <code>{publicOrigin}/mcp</code>
+                  </p>
+                )}
+                <Button type="submit" disabled={save.isPending}>Save changes</Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </Page>
   )

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"connectrpc.com/connect"
 	v1 "github.com/aetherix/aetherixcloud/gen/aetherix/v1"
@@ -158,10 +159,12 @@ func (s *Server) registerAdminTools() {
 		})
 
 	type updateClusterIn struct {
-		Name   string `json:"name,omitempty" jsonschema:"cluster display name"`
-		Domain string `json:"domain,omitempty" jsonschema:"default base domain for services"`
+		Name          string `json:"name,omitempty" jsonschema:"cluster display name"`
+		Domain        string `json:"domain,omitempty" jsonschema:"default base domain for service hostnames"`
+		DashboardHost *string `json:"dashboard_host,omitempty" jsonschema:"public dashboard/MCP hostname; empty string clears"`
+		DashboardPort *int    `json:"dashboard_port,omitempty" jsonschema:"public port (443 via Caddy, 8443 direct)"`
 	}
-	register(s, "update_cluster", "Update cluster name and/or default domain.", auth.LevelAdmin, write("Update cluster", true),
+	register(s, "update_cluster", "Update cluster name, app domain, and/or public dashboard host/port.", auth.LevelAdmin, write("Update cluster", true),
 		func(ctx context.Context, c *call, in updateClusterIn) (any, error) {
 			req := &v1.UpdateClusterRequest{}
 			if in.Name != "" {
@@ -169,6 +172,14 @@ func (s *Server) registerAdminTools() {
 			}
 			if in.Domain != "" {
 				req.Domain = &in.Domain
+			}
+			if in.DashboardHost != nil {
+				h := strings.ToLower(strings.TrimSpace(*in.DashboardHost))
+				req.DashboardHost = &h
+			}
+			if in.DashboardPort != nil {
+				p := int32(*in.DashboardPort)
+				req.DashboardPort = &p
 			}
 			r, err := c.api.Cluster.UpdateCluster(ctx, connect.NewRequest(req))
 			if err != nil {
@@ -317,6 +328,24 @@ func (s *Server) registerAdminTools() {
 				return nil, err
 			}
 			return map[string]any{"executed": true, "deleted": p.Name}, nil
+		})
+
+	type disconnectGHIn struct {
+		Confirmation
+	}
+	register(s, "disconnect_github_app", "Remove GitHub App credentials from the cluster (does not delete the App on GitHub). Destructive: needs confirm=true.",
+		auth.LevelAdmin, destructive("Disconnect GitHub App"),
+		func(ctx context.Context, c *call, in disconnectGHIn) (any, error) {
+			if dry, err := c.gate("disconnect_github_app", "github", in.Confirmation, func() (map[string]any, error) {
+				return map[string]any{"action": "disconnect github app",
+					"effect": "cluster credentials and installation cache are cleared; the App remains on GitHub until deleted there"}, nil
+			}); err != nil || dry != nil {
+				return dry, err
+			}
+			if _, err := c.api.GitHub.DisconnectApp(ctx, connect.NewRequest(&v1.DisconnectAppRequest{Confirm: true})); err != nil {
+				return nil, err
+			}
+			return map[string]any{"executed": true, "disconnected": true}, nil
 		})
 }
 

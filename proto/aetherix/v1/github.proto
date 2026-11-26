@@ -24,6 +24,9 @@ service GitHubService {
   // GitHub API and runs the real build+deploy pipeline (`ax dev push`).
   rpc SimulatePush(SimulatePushRequest) returns (SimulatePushResponse);
   rpc SetWebhookUrl(SetWebhookUrlRequest) returns (SetWebhookUrlResponse);
+  // DisconnectApp removes the stored App credentials and cached installations
+  // from the cluster. It does not delete the App on GitHub.
+  rpc DisconnectApp(DisconnectAppRequest) returns (DisconnectAppResponse);
 }
 
 message GetAppRequest {}
@@ -99,3 +102,8 @@ message SetWebhookUrlRequest {
   string url = 1;
 }
 message SetWebhookUrlResponse {}
+
+message DisconnectAppRequest {
+  bool confirm = 1;  // must be true
+}
+message DisconnectAppResponse {}

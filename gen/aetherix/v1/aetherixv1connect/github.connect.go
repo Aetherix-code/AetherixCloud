@@ -61,6 +61,9 @@ const (
 	// GitHubServiceSetWebhookUrlProcedure is the fully-qualified name of the GitHubService's
 	// SetWebhookUrl RPC.
 	GitHubServiceSetWebhookUrlProcedure = "/aetherix.v1.GitHubService/SetWebhookUrl"
+	// GitHubServiceDisconnectAppProcedure is the fully-qualified name of the GitHubService's
+	// DisconnectApp RPC.
+	GitHubServiceDisconnectAppProcedure = "/aetherix.v1.GitHubService/DisconnectApp"
 )
 
 // GitHubServiceClient is a client for the aetherix.v1.GitHubService service.
@@ -80,6 +83,9 @@ type GitHubServiceClient interface {
 	// GitHub API and runs the real build+deploy pipeline (`ax dev push`).
 	SimulatePush(context.Context, *connect.Request[v1.SimulatePushRequest]) (*connect.Response[v1.SimulatePushResponse], error)
 	SetWebhookUrl(context.Context, *connect.Request[v1.SetWebhookUrlRequest]) (*connect.Response[v1.SetWebhookUrlResponse], error)
+	// DisconnectApp removes the stored App credentials and cached installations
+	// from the cluster. It does not delete the App on GitHub.
+	DisconnectApp(context.Context, *connect.Request[v1.DisconnectAppRequest]) (*connect.Response[v1.DisconnectAppResponse], error)
 }
 
 // NewGitHubServiceClient constructs a client for the aetherix.v1.GitHubService service. By default,
@@ -141,6 +147,12 @@ func NewGitHubServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(gitHubServiceMethods.ByName("SetWebhookUrl")),
 			connect.WithClientOptions(opts...),
 		),
+		disconnectApp: connect.NewClient[v1.DisconnectAppRequest, v1.DisconnectAppResponse](
+			httpClient,
+			baseURL+GitHubServiceDisconnectAppProcedure,
+			connect.WithSchema(gitHubServiceMethods.ByName("DisconnectApp")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -154,6 +166,7 @@ type gitHubServiceClient struct {
 	listBranches          *connect.Client[v1.ListBranchesRequest, v1.ListBranchesResponse]
 	simulatePush          *connect.Client[v1.SimulatePushRequest, v1.SimulatePushResponse]
 	setWebhookUrl         *connect.Client[v1.SetWebhookUrlRequest, v1.SetWebhookUrlResponse]
+	disconnectApp         *connect.Client[v1.DisconnectAppRequest, v1.DisconnectAppResponse]
 }
 
 // GetApp calls aetherix.v1.GitHubService.GetApp.
@@ -196,6 +209,11 @@ func (c *gitHubServiceClient) SetWebhookUrl(ctx context.Context, req *connect.Re
 	return c.setWebhookUrl.CallUnary(ctx, req)
 }
 
+// DisconnectApp calls aetherix.v1.GitHubService.DisconnectApp.
+func (c *gitHubServiceClient) DisconnectApp(ctx context.Context, req *connect.Request[v1.DisconnectAppRequest]) (*connect.Response[v1.DisconnectAppResponse], error) {
+	return c.disconnectApp.CallUnary(ctx, req)
+}
+
 // GitHubServiceHandler is an implementation of the aetherix.v1.GitHubService service.
 type GitHubServiceHandler interface {
 	// GetApp returns whether the GitHub App is configured (no secrets).
@@ -213,6 +231,9 @@ type GitHubServiceHandler interface {
 	// GitHub API and runs the real build+deploy pipeline (`ax dev push`).
 	SimulatePush(context.Context, *connect.Request[v1.SimulatePushRequest]) (*connect.Response[v1.SimulatePushResponse], error)
 	SetWebhookUrl(context.Context, *connect.Request[v1.SetWebhookUrlRequest]) (*connect.Response[v1.SetWebhookUrlResponse], error)
+	// DisconnectApp removes the stored App credentials and cached installations
+	// from the cluster. It does not delete the App on GitHub.
+	DisconnectApp(context.Context, *connect.Request[v1.DisconnectAppRequest]) (*connect.Response[v1.DisconnectAppResponse], error)
 }
 
 // NewGitHubServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -270,6 +291,12 @@ func NewGitHubServiceHandler(svc GitHubServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(gitHubServiceMethods.ByName("SetWebhookUrl")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gitHubServiceDisconnectAppHandler := connect.NewUnaryHandler(
+		GitHubServiceDisconnectAppProcedure,
+		svc.DisconnectApp,
+		connect.WithSchema(gitHubServiceMethods.ByName("DisconnectApp")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/aetherix.v1.GitHubService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GitHubServiceGetAppProcedure:
@@ -288,6 +315,8 @@ func NewGitHubServiceHandler(svc GitHubServiceHandler, opts ...connect.HandlerOp
 			gitHubServiceSimulatePushHandler.ServeHTTP(w, r)
 		case GitHubServiceSetWebhookUrlProcedure:
 			gitHubServiceSetWebhookUrlHandler.ServeHTTP(w, r)
+		case GitHubServiceDisconnectAppProcedure:
+			gitHubServiceDisconnectAppHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -327,4 +356,8 @@ func (UnimplementedGitHubServiceHandler) SimulatePush(context.Context, *connect.
 
 func (UnimplementedGitHubServiceHandler) SetWebhookUrl(context.Context, *connect.Request[v1.SetWebhookUrlRequest]) (*connect.Response[v1.SetWebhookUrlResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aetherix.v1.GitHubService.SetWebhookUrl is not implemented"))
+}
+
+func (UnimplementedGitHubServiceHandler) DisconnectApp(context.Context, *connect.Request[v1.DisconnectAppRequest]) (*connect.Response[v1.DisconnectAppResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aetherix.v1.GitHubService.DisconnectApp is not implemented"))
 }

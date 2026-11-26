@@ -261,6 +261,8 @@ type UpdateClusterRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
 	Domain        *string                `protobuf:"bytes,2,opt,name=domain,proto3,oneof" json:"domain,omitempty"`
+	DashboardHost *string                `protobuf:"bytes,3,opt,name=dashboard_host,json=dashboardHost,proto3,oneof" json:"dashboard_host,omitempty"`
+	DashboardPort *int32                 `protobuf:"varint,4,opt,name=dashboard_port,json=dashboardPort,proto3,oneof" json:"dashboard_port,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -307,6 +309,20 @@ func (x *UpdateClusterRequest) GetDomain() string {
 		return *x.Domain
 	}
 	return ""
+}
+
+func (x *UpdateClusterRequest) GetDashboardHost() string {
+	if x != nil && x.DashboardHost != nil {
+		return *x.DashboardHost
+	}
+	return ""
+}
+
+func (x *UpdateClusterRequest) GetDashboardPort() int32 {
+	if x != nil && x.DashboardPort != nil {
+		return *x.DashboardPort
+	}
+	return 0
 }
 
 type UpdateClusterResponse struct {
@@ -1279,12 +1295,16 @@ const file_aetherix_v1_cluster_proto_rawDesc = "" +
 	"\x10replicas_desired\x18\b \x01(\x05R\x0freplicasDesired\x12\x1b\n" +
 	"\tserved_by\x18\t \x01(\tR\bservedBy\x12\x18\n" +
 	"\aversion\x18\n" +
-	" \x01(\tR\aversion\"`\n" +
+	" \x01(\tR\aversion\"\xde\x01\n" +
 	"\x14UpdateClusterRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x1b\n" +
-	"\x06domain\x18\x02 \x01(\tH\x01R\x06domain\x88\x01\x01B\a\n" +
+	"\x06domain\x18\x02 \x01(\tH\x01R\x06domain\x88\x01\x01\x12*\n" +
+	"\x0edashboard_host\x18\x03 \x01(\tH\x02R\rdashboardHost\x88\x01\x01\x12*\n" +
+	"\x0edashboard_port\x18\x04 \x01(\x05H\x03R\rdashboardPort\x88\x01\x01B\a\n" +
 	"\x05_nameB\t\n" +
-	"\a_domain\"G\n" +
+	"\a_domainB\x11\n" +
+	"\x0f_dashboard_hostB\x11\n" +
+	"\x0f_dashboard_port\"G\n" +
 	"\x15UpdateClusterResponse\x12.\n" +
 	"\acluster\x18\x01 \x01(\v2\x14.aetherix.v1.ClusterR\acluster\"M\n" +
 	"\x12WatchEventsRequest\x12\x1f\n" +

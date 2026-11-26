@@ -738,8 +738,15 @@ type Cluster struct {
 	// Mesh network, e.g. "10.210.0.0/16".
 	Network string `protobuf:"bytes,4,opt,name=network,proto3" json:"network,omitempty"`
 	// Default domain for generated hostnames ("" until configured).
-	Domain        string                 `protobuf:"bytes,5,opt,name=domain,proto3" json:"domain,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Domain    string                 `protobuf:"bytes,5,opt,name=domain,proto3" json:"domain,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Public hostname for the dashboard/API/MCP (e.g. "cloud.example.com").
+	// When set and dashboard_port is 443 (default), ingress Caddy serves this
+	// host on HTTPS and proxies to the local aetherixd listener (:8443).
+	DashboardHost string `protobuf:"bytes,7,opt,name=dashboard_host,json=dashboardHost,proto3" json:"dashboard_host,omitempty"`
+	// Public port for the dashboard URL (0 → 443 when dashboard_host is set).
+	// Use 8443 to advertise the direct aetherixd TLS port (no Caddy route).
+	DashboardPort int32 `protobuf:"varint,8,opt,name=dashboard_port,json=dashboardPort,proto3" json:"dashboard_port,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -814,6 +821,20 @@ func (x *Cluster) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *Cluster) GetDashboardHost() string {
+	if x != nil {
+		return x.DashboardHost
+	}
+	return ""
+}
+
+func (x *Cluster) GetDashboardPort() int32 {
+	if x != nil {
+		return x.DashboardPort
+	}
+	return 0
 }
 
 type Project struct {
@@ -2761,7 +2782,7 @@ const file_aetherix_v1_types_proto_rawDesc = "" +
 	"\x0fupgrade_message\x18\x14 \x01(\tR\x0eupgradeMessage\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb1\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xff\x01\n" +
 	"\aCluster\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x15\n" +
@@ -2769,7 +2790,9 @@ const file_aetherix_v1_types_proto_rawDesc = "" +
 	"\anetwork\x18\x04 \x01(\tR\anetwork\x12\x16\n" +
 	"\x06domain\x18\x05 \x01(\tR\x06domain\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x8a\x01\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12%\n" +
+	"\x0edashboard_host\x18\a \x01(\tR\rdashboardHost\x12%\n" +
+	"\x0edashboard_port\x18\b \x01(\x05R\rdashboardPort\"\x8a\x01\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +

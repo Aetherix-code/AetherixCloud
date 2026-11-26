@@ -75,6 +75,13 @@ message Cluster {
   // Default domain for generated hostnames ("" until configured).
   string domain = 5;
   google.protobuf.Timestamp created_at = 6;
+  // Public hostname for the dashboard/API/MCP (e.g. "cloud.example.com").
+  // When set and dashboard_port is 443 (default), ingress Caddy serves this
+  // host on HTTPS and proxies to the local aetherixd listener (:8443).
+  string dashboard_host = 7;
+  // Public port for the dashboard URL (0 → 443 when dashboard_host is set).
+  // Use 8443 to advertise the direct aetherixd TLS port (no Caddy route).
+  int32 dashboard_port = 8;
 }
 
 // ---------------------------------------------------------------- projects

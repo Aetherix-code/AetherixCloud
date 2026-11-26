@@ -385,6 +385,35 @@ func TestNotConfigured(t *testing.T) {
 	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 }
 
+func TestDisconnectApp(t *testing.T) {
+	m, _, _ := newModule(t)
+	svc := &Service{M: m}
+	ctx := context.Background()
+	_, err := svc.DisconnectApp(ctx, connect.NewRequest(&v1.DisconnectAppRequest{}))
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+
+	_, _, state, err := m.BeginManifest(ctx, "https://ax.example.com", "")
+	require.NoError(t, err)
+	_, _, err = m.CompleteManifest(ctx, "CODE", state)
+	require.NoError(t, err)
+	require.NoError(t, putInstallation(ctx, m.Store, &v1.Installation{Id: 99, Account: "acme"}))
+
+	app, err := svc.GetApp(ctx, connect.NewRequest(&v1.GetAppRequest{}))
+	require.NoError(t, err)
+	require.True(t, app.Msg.Configured)
+
+	_, err = svc.DisconnectApp(ctx, connect.NewRequest(&v1.DisconnectAppRequest{Confirm: true}))
+	require.NoError(t, err)
+	app, err = svc.GetApp(ctx, connect.NewRequest(&v1.GetAppRequest{}))
+	require.NoError(t, err)
+	require.False(t, app.Msg.Configured)
+	ins, err := listInstallations(ctx, m.Store)
+	require.NoError(t, err)
+	require.Empty(t, ins)
+	_, err = m.Client(ctx)
+	require.ErrorIs(t, err, errNotConfigured)
+}
+
 // ---- webhook
 
 func hook(t *testing.T, m *Module, delivery, event, secret string, payload any) *httptest.ResponseRecorder {
