@@ -10,9 +10,9 @@
 //   - Destructive tools are gated behind confirm:true with a dry-run summary
 //     (confirm.go); secrets are redacted (redact.go); calls are rate limited
 //     per token and audited with the agent's client name.
-//   - Transport is stateful Streamable HTTP (Mcp-Session-Id) so Claude can
-//     open the optional GET SSE stream. Prefer sticky sessions when you run
-//     more than one node.
+//   - Transport is stateless Streamable HTTP (JSON responses). Claude and
+//     other 2026-07-28 clients require Stateless; stateful mode rejects that
+//     protocol and surfaces as HTTP 404 / CLIENT_HTTP_NOT_IMPLEMENTED.
 package mcp
 
 import (
@@ -101,12 +101,11 @@ func (s *Server) SDK() *sdk.Server { return s.srv }
 
 // Handler is the /mcp endpoint.
 func (s *Server) Handler() http.Handler {
-	// DisableLocalhostProtection: aetherixd is reverse-proxied by Caddy to
-	// 127.0.0.1:8443 with the public Host header. The SDK's DNS-rebinding
-	// guard then returns 403 after a valid bearer — Claude saw that as
-	// "forbidden or insufficient scope" despite a clean oauth.token.
+	// Stateless + JSONResponse: required for MCP protocol 2026-07-28 (Claude).
+	// DisableLocalhostProtection: Caddy dials 127.0.0.1:8443 with the public
+	// Host header; the SDK DNS-rebinding guard would otherwise 403 after auth.
 	inner := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return s.srv },
-		&sdk.StreamableHTTPOptions{JSONResponse: true, DisableLocalhostProtection: true, Logger: nil})
+		&sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true, DisableLocalhostProtection: true, Logger: nil})
 	limited := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := principalOf(sdkauth.TokenInfoFromContext(r.Context())); p != nil {
 			if ok, wait := s.rate.Allow(p.RateKey()); !ok {
@@ -191,8 +190,16 @@ func (s *Server) Handler() http.Handler {
 				"method": r.Method, "proto": r.Header.Get("MCP-Protocol-Version"),
 				"token_kind": kind, "host": r.Host,
 			}
+			if h := r.Header.Get("Mcp-Method"); h != "" {
+				attrs["mcp_method"] = h
+			}
 			if authErr != "" {
 				attrs["error"] = authErr
+			} else if rec.code >= 400 && body != "" {
+				attrs["response"] = body
+				if len(attrs["response"]) > 160 {
+					attrs["response"] = attrs["response"][:160]
+				}
 			}
 			_ = auth.WriteAudit(r.Context(), s.cfg.Store, &v1.AuditEntry{
 				ActorUserId: userID, Via: "mcp", Client: client, Action: "mcp.auth",

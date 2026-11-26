@@ -436,6 +436,24 @@ func TestMCPAllowsProxiedPublicHost(t *testing.T) {
 	require.True(t, resp.StatusCode < 400, "status=%d", resp.StatusCode)
 }
 
+func TestMCPProtocol2026Stateless(t *testing.T) {
+	// Claude probes 2026-07-28; the Go SDK only accepts that on Stateless HTTP.
+	e := newEnv(t, nil)
+	cl := sdk.NewClient(&sdk.Implementation{Name: "claude", Version: "1"}, nil)
+	cs, err := cl.Connect(context.Background(), &sdk.StreamableClientTransport{
+		Endpoint:             e.srv.URL + mcp.Path,
+		HTTPClient:           &http.Client{Transport: bearerRT{tok: e.admin, ua: "claude/1"}},
+		DisableStandaloneSSE: true,
+	}, &sdk.ClientSessionOptions{ProtocolVersion: "2026-07-28"})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cs.Close() })
+	tools, err := cs.ListTools(context.Background(), nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, tools.Tools)
+	_, res := call(t, cs, "list_projects", nil)
+	require.False(t, res.IsError, text(res))
+}
+
 func TestMCPAuthAuditIgnoresProtocolErrors(t *testing.T) {
 	// mcp.auth must reflect credential acceptance, not Streamable protocol 4xx
 	// (missing Accept, wrong Content-Type, etc.) — Claude's oauth.token was
