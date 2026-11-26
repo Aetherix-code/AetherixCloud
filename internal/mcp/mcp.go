@@ -10,8 +10,9 @@
 //   - Destructive tools are gated behind confirm:true with a dry-run summary
 //     (confirm.go); secrets are redacted (redact.go); calls are rate limited
 //     per token and audited with the agent's client name.
-//   - The server is stateless (no Mcp-Session-Id), so any node behind Caddy
-//     can serve any request.
+//   - Transport is stateful Streamable HTTP (Mcp-Session-Id) so Claude can
+//     open the optional GET SSE stream. Prefer sticky sessions when you run
+//     more than one node.
 package mcp
 
 import (
@@ -101,7 +102,7 @@ func (s *Server) SDK() *sdk.Server { return s.srv }
 // Handler is the /mcp endpoint.
 func (s *Server) Handler() http.Handler {
 	inner := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return s.srv },
-		&sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true, Logger: nil})
+		&sdk.StreamableHTTPOptions{JSONResponse: true, Logger: nil})
 	limited := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := principalOf(sdkauth.TokenInfoFromContext(r.Context())); p != nil {
 			if ok, wait := s.rate.Allow(p.RateKey()); !ok {
@@ -124,6 +125,9 @@ func (s *Server) Handler() http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		// Claude sometimes omits Accept; the Streamable SDK requires both
+		// application/json and text/event-stream on POST.
+		normalizeMCPAccept(r)
 		bearer := auth.BearerFromHeader(r.Header.Get("Authorization"))
 		hasAuth := bearer != ""
 		opts := &sdkauth.RequireBearerTokenOptions{AllowMissingExpiration: true, Scopes: []string{auth.ScopeRead}}
@@ -131,33 +135,89 @@ func (s *Server) Handler() http.Handler {
 			opts.ResourceMetadataURL = s.cfg.OAuth.ResourceMetadataURL(r)
 		}
 		rec := &statusRecorder{ResponseWriter: w, code: 200}
+		var (
+			verified bool
+			userID   string
+			client   string
+		)
 		verify := func(ctx context.Context, token string, req *http.Request) (*sdkauth.TokenInfo, error) {
 			ti, err := s.verify(ctx, token, req)
 			if err != nil {
 				rec.err = err.Error()
 				s.log.Info("mcp auth failed", "err", err.Error(), "token_kind", tokenPrefix(token))
+				return nil, err
 			}
-			return ti, err
+			verified = true
+			if ti != nil {
+				userID = ti.UserID
+				if p := principalOf(ti); p != nil {
+					client = p.Client
+				}
+			}
+			return ti, nil
 		}
 		sdkauth.RequireBearerToken(verify, opts)(limited).ServeHTTP(rec, r)
 		if hasAuth {
 			kind := tokenPrefix(bearer)
+			// mcp.auth tracks credential acceptance only. Protocol 4xx (bad
+			// Accept, GET-without-session, etc.) must not look like a bad token —
+			// that was masking Claude connect failures after a clean oauth.token.
+			authOK := verified && rec.err == "" && rec.code != http.StatusUnauthorized && rec.code != http.StatusForbidden
+			authErr := rec.err
+			if !authOK && authErr == "" {
+				switch rec.code {
+				case http.StatusUnauthorized:
+					authErr = "unauthorized"
+				case http.StatusForbidden:
+					authErr = "forbidden or insufficient scope"
+				}
+			}
 			s.log.Info("mcp request", "method", r.Method, "status", rec.code, "ua", r.UserAgent(),
-				"proto", r.Header.Get("MCP-Protocol-Version"), "auth", true, "token_kind", kind, "err", rec.err)
-			ok := rec.code < 400
+				"proto", r.Header.Get("MCP-Protocol-Version"), "auth_ok", authOK, "token_kind", kind, "err", authErr)
 			attrs := map[string]string{
 				"status": strconv.Itoa(rec.code), "ua": r.UserAgent(),
 				"method": r.Method, "proto": r.Header.Get("MCP-Protocol-Version"),
 				"token_kind": kind,
 			}
-			if rec.err != "" {
-				attrs["error"] = rec.err
+			if authErr != "" {
+				attrs["error"] = authErr
 			}
 			_ = auth.WriteAudit(r.Context(), s.cfg.Store, &v1.AuditEntry{
-				Via: "mcp", Action: "mcp.auth", Ok: ok, Error: rec.err, Attributes: attrs,
+				ActorUserId: userID, Via: "mcp", Client: client, Action: "mcp.auth",
+				Ok: authOK, Error: authErr, Attributes: attrs,
 			})
 		}
 	})
+}
+
+// normalizeMCPAccept ensures Streamable HTTP Accept requirements are met when
+// the client sends an empty or overly broad value.
+func normalizeMCPAccept(r *http.Request) {
+	if r.Method == http.MethodGet {
+		if a := r.Header.Get("Accept"); a == "" || a == "*/*" {
+			r.Header.Set("Accept", "text/event-stream")
+		}
+		return
+	}
+	if r.Method != http.MethodPost {
+		return
+	}
+	a := r.Header.Get("Accept")
+	if a == "" || a == "*/*" {
+		r.Header.Set("Accept", "application/json, text/event-stream")
+		return
+	}
+	low := strings.ToLower(a)
+	needJSON := !strings.Contains(low, "application/json") && !strings.Contains(low, "application/*") && !strings.Contains(low, "*/*")
+	needSSE := !strings.Contains(low, "text/event-stream") && !strings.Contains(low, "text/*") && !strings.Contains(low, "*/*")
+	switch {
+	case needJSON && needSSE:
+		r.Header.Set("Accept", a+", application/json, text/event-stream")
+	case needJSON:
+		r.Header.Set("Accept", a+", application/json")
+	case needSSE:
+		r.Header.Set("Accept", a+", text/event-stream")
+	}
 }
 
 type statusRecorder struct {
@@ -169,6 +229,12 @@ type statusRecorder struct {
 func (s *statusRecorder) WriteHeader(code int) {
 	s.code = code
 	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // verify implements sdkauth.TokenVerifier on top of internal/auth.

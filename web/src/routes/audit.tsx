@@ -133,7 +133,15 @@ export function AuditSettings() {
                       {e.ok ? (
                         <Badge tone="success">ok</Badge>
                       ) : (
-                        <Badge tone="danger" title={e.error}>{e.error || 'failed'}</Badge>
+                        <Badge tone="danger" title={e.error || e.attributes?.error}>
+                          {e.error || e.attributes?.error || 'failed'}
+                        </Badge>
+                      )}
+                      {e.attributes?.status && (
+                        <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">HTTP {e.attributes.status}</div>
+                      )}
+                      {e.attributes?.token_kind && (
+                        <div className="font-mono text-[11px] text-muted-foreground">{e.attributes.token_kind}</div>
                       )}
                     </td>
                   </tr>

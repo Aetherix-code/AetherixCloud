@@ -410,6 +410,66 @@ func TestDeployLifecycleToolsAndDomain(t *testing.T) {
 	require.True(t, res.IsError)
 }
 
+func TestMCPAuthAuditIgnoresProtocolErrors(t *testing.T) {
+	// mcp.auth must reflect credential acceptance, not Streamable protocol 4xx
+	// (missing Accept, wrong Content-Type, etc.) — Claude's oauth.token was
+	// green while every follow-up /mcp was audited as auth failed.
+	e := newEnv(t, nil)
+	tok := e.admin
+
+	post := func(accept, contentType, body string) *http.Response {
+		req, err := http.NewRequest("POST", e.srv.URL+"/mcp", strings.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		if accept != "" {
+			req.Header.Set("Accept", accept)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		return resp
+	}
+
+	// Empty Accept is normalized; initialize should authenticate.
+	resp := post("", "application/json", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"claude","version":"1"}}}`)
+	body, _ := json.Marshal(map[string]any{})
+	_, _ = body, resp.Body.Close()
+	require.True(t, resp.StatusCode < 400, "status=%d", resp.StatusCode)
+
+	// Wrong Content-Type is a protocol error after a valid bearer.
+	resp = post("application/json, text/event-stream", "text/plain", `{}`)
+	require.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
+	resp.Body.Close()
+
+	// Bad token remains auth failure.
+	req, _ := http.NewRequest("POST", e.srv.URL+"/mcp", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer axt_nope")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	bad, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, 401, bad.StatusCode)
+	bad.Body.Close()
+
+	entries, err := auth.ListAudit(context.Background(), e.st, "", "mcp.auth", 20)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(entries), 2)
+	var sawOK, sawFail bool
+	for _, en := range entries {
+		if en.Ok {
+			sawOK = true
+			require.NotEqual(t, "401", en.Attributes["status"])
+		} else {
+			sawFail = true
+			require.NotEmpty(t, en.Error)
+		}
+	}
+	require.True(t, sawOK, "valid bearer + protocol 415 must still audit mcp.auth ok")
+	require.True(t, sawFail, "invalid bearer must audit mcp.auth failed")
+}
+
 func TestAuditAndRateLimit(t *testing.T) {
 	e := newEnv(t, func(c *mcp.Config) { c.RatePerMinute = 60; c.Burst = 5 })
 	e.project(t, "p")
