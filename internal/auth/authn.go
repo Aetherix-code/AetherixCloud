@@ -50,7 +50,15 @@ func (a *Authenticator) oauthAccess(ctx context.Context, bearer string) (*Princi
 		return nil, ErrInvalidToken
 	}
 	g, err := GetGrant(ctx, a.Store, gid)
-	if err != nil || g.Revoked || !AccessMatches(g, secret) {
+	switch {
+	case err != nil:
+		return nil, ErrInvalidToken
+	case g.Revoked:
+		return nil, ErrInvalidToken
+	case g.AccessHash == "":
+		// Grant row replicated before AccessHash (or legacy grant) — treat as miss.
+		return nil, ErrInvalidToken
+	case !AccessMatches(g, secret):
 		return nil, ErrInvalidToken
 	}
 	u, err := GetUser(ctx, a.Store, g.UserID)

@@ -729,10 +729,8 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c *Client)
 	secret := randString(32)
 	g := &auth.Grant{ID: ids.New(), ClientID: c.ID, ClientName: c.Name, UserID: u.Id, Scopes: scopes, Resource: cp.Resource,
 		CreatedAt: time.Now().UTC(), RefreshHash: hash(secret), RefreshExpires: time.Now().Add(s.refreshTTL())}
-	if err := auth.PutGrant(ctx, s.Store, g); err != nil {
-		s.tokenFail(w, r, 500, "server_error", "storage error")
-		return
-	}
+	// Mint the access token before the first PutGrant so a concurrent /mcp
+	// on another node never sees a grant without AccessHash (replication race).
 	cp.Used, cp.GrantID = true, g.ID
 	_ = s.putPending(ctx, id, cp)
 	s.issue(w, r, g, RefreshPrefix+g.ID+"."+secret)
