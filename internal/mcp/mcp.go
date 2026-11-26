@@ -134,6 +134,14 @@ func (s *Server) Handler() http.Handler {
 		if hasAuth {
 			s.log.Info("mcp request", "method", r.Method, "status", rec.code, "ua", r.UserAgent(),
 				"proto", r.Header.Get("MCP-Protocol-Version"), "auth", true)
+			ok := rec.code < 400
+			_ = auth.WriteAudit(r.Context(), s.cfg.Store, &v1.AuditEntry{
+				Via: "mcp", Action: "mcp.auth", Ok: ok,
+				Attributes: map[string]string{
+					"status": strconv.Itoa(rec.code), "ua": r.UserAgent(),
+					"method": r.Method, "proto": r.Header.Get("MCP-Protocol-Version"),
+				},
+			})
 		}
 	})
 }

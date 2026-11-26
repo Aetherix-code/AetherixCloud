@@ -168,6 +168,16 @@ func oauthErr(w http.ResponseWriter, code int, e, desc string) {
 	writeJSON(w, code, map[string]string{"error": e, "error_description": desc})
 }
 
+func (s *Server) tokenFail(w http.ResponseWriter, r *http.Request, code int, e, desc string) {
+	s.Logger.Info("oauth token failed", "error", e, "desc", desc, "ua", r.UserAgent(), "grant_type", r.PostFormValue("grant_type"))
+	_ = auth.WriteAudit(r.Context(), s.Store, &v1.AuditEntry{
+		Via: "mcp", Action: "oauth.token", Ok: false, Error: e + ": " + desc,
+		Client:     r.PostFormValue("client_id"),
+		Attributes: map[string]string{"ua": r.UserAgent(), "grant_type": r.PostFormValue("grant_type")},
+	})
+	oauthErr(w, code, e, desc)
+}
+
 func (s *Server) cors(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, MCP-Protocol-Version")
@@ -638,7 +648,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	c, err := s.authenticateClient(r)
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", `Basic realm="oauth"`)
-		oauthErr(w, 401, "invalid_client", err.Error())
+		s.tokenFail(w, r, 401, "invalid_client", err.Error())
 		return
 	}
 	switch r.PostFormValue("grant_type") {
@@ -647,7 +657,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	case "refresh_token":
 		s.refresh(w, r, c)
 	default:
-		oauthErr(w, 400, "unsupported_grant_type", "authorization_code or refresh_token")
+		s.tokenFail(w, r, 400, "unsupported_grant_type", "authorization_code or refresh_token")
 	}
 }
 
@@ -661,6 +671,10 @@ func (s *Server) issue(w http.ResponseWriter, r *http.Request, g *auth.Grant, re
 	}
 	s.Logger.Info("oauth token issued", "grant", g.ID, "client", g.ClientName, "user", g.UserID,
 		"scopes", strings.Join(g.Scopes, " "), "resource", g.Resource, "ua", r.UserAgent())
+	_ = auth.WriteAudit(r.Context(), s.Store, &v1.AuditEntry{
+		ActorUserId: g.UserID, Via: "mcp", Client: g.ClientName, Action: "oauth.token", Ok: true,
+		Attributes: map[string]string{"grant_id": g.ID, "scopes": strings.Join(g.Scopes, " "), "resource": g.Resource, "ua": r.UserAgent()},
+	})
 	writeJSON(w, 200, map[string]any{"access_token": at, "token_type": "Bearer", "expires_in": int(s.accessTTL().Seconds()),
 		"refresh_token": refresh, "scope": strings.Join(g.Scopes, " ")})
 }
@@ -671,7 +685,7 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c *Client)
 	id := "code:" + hash(code)
 	cp, err := s.getPending(ctx, id, "code")
 	if err != nil || code == "" {
-		oauthErr(w, 400, "invalid_grant", "unknown code")
+		s.tokenFail(w, r, 400, "invalid_grant", "unknown code")
 		return
 	}
 	if cp.Used {
@@ -679,17 +693,17 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c *Client)
 		if cp.GrantID != "" {
 			_ = auth.RevokeGrant(ctx, s.Store, cp.GrantID)
 		}
-		oauthErr(w, 400, "invalid_grant", "code already used")
+		s.tokenFail(w, r, 400, "invalid_grant", "code already used")
 		return
 	}
 	if ru := r.PostFormValue("redirect_uri"); time.Now().After(cp.Expires) || cp.ClientID != c.ID || (ru != "" && ru != cp.RedirectURI) {
-		oauthErr(w, 400, "invalid_grant", "code expired or does not match the client")
+		s.tokenFail(w, r, 400, "invalid_grant", "code expired or does not match the client")
 		return
 	}
 	v := r.PostFormValue("code_verifier")
 	sum := sha256.Sum256([]byte(v))
 	if len(v) < 43 || len(v) > 128 || subtle.ConstantTimeCompare([]byte(base64.RawURLEncoding.EncodeToString(sum[:])), []byte(cp.Challenge)) != 1 {
-		oauthErr(w, 400, "invalid_grant", "PKCE verification failed")
+		s.tokenFail(w, r, 400, "invalid_grant", "PKCE verification failed")
 		return
 	}
 	// RFC 8707: resource on the token request must match the one from authorize
@@ -697,7 +711,7 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c *Client)
 	resource := strings.TrimSpace(r.PostFormValue("resource"))
 	switch {
 	case resource != "" && cp.Resource != "" && !sameResource(resource, cp.Resource):
-		oauthErr(w, 400, "invalid_target", "resource does not match the authorization request")
+		s.tokenFail(w, r, 400, "invalid_target", "resource does not match the authorization request")
 		return
 	case resource != "":
 		cp.Resource = strings.TrimRight(resource, "/")
@@ -708,7 +722,7 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c *Client)
 	}
 	u, err := auth.GetUser(ctx, s.Store, cp.UserID)
 	if err != nil {
-		oauthErr(w, 400, "invalid_grant", "user no longer exists")
+		s.tokenFail(w, r, 400, "invalid_grant", "user no longer exists")
 		return
 	}
 	scopes := intersect(cp.Scopes, allowedScopesForRole(u.Role))
@@ -716,7 +730,7 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c *Client)
 	g := &auth.Grant{ID: ids.New(), ClientID: c.ID, ClientName: c.Name, UserID: u.Id, Scopes: scopes, Resource: cp.Resource,
 		CreatedAt: time.Now().UTC(), RefreshHash: hash(secret), RefreshExpires: time.Now().Add(s.refreshTTL())}
 	if err := auth.PutGrant(ctx, s.Store, g); err != nil {
-		oauthErr(w, 500, "server_error", "storage error")
+		s.tokenFail(w, r, 500, "server_error", "storage error")
 		return
 	}
 	cp.Used, cp.GrantID = true, g.ID
