@@ -662,18 +662,31 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) issue(w http.ResponseWriter, r *http.Request, g *auth.Grant, refresh string) {
-	// Opaque access tokens (not JWTs): Claude and other brokers sometimes try
-	// to validate JWT shape/signature and discard HS256 tokens without JWKS.
-	at := auth.MintAccessToken(g, s.accessTTL())
+	// Access tokens are HS256 JWTs (stateless verify). Opaque axa_ tokens are
+	// still accepted if present, but minting JWTs avoids a Corrosion
+	// read-after-write miss on AccessHash that showed up as mcp.auth failed
+	// even on a single node.
+	g.AccessHash, g.AccessExpires = "", time.Time{}
 	if err := auth.PutGrant(r.Context(), s.Store, g); err != nil {
 		oauthErr(w, 500, "server_error", "storage error")
 		return
 	}
+	now := time.Now()
+	base := s.BaseURLFor(r)
+	aud := strings.TrimRight(g.Resource, "/")
+	if aud == "" {
+		aud = base + s.resPath()
+	}
+	at := s.Auth.Signer.Sign(auth.Claims{
+		Iss: base, Sub: g.UserID, Sid: g.ID, Typ: auth.KindOAuth,
+		Scope: strings.Join(g.Scopes, " "), Aud: aud, Cid: g.ClientID,
+		Iat: now.Unix(), Exp: now.Add(s.accessTTL()).Unix(),
+	})
 	s.Logger.Info("oauth token issued", "grant", g.ID, "client", g.ClientName, "user", g.UserID,
-		"scopes", strings.Join(g.Scopes, " "), "resource", g.Resource, "ua", r.UserAgent())
+		"scopes", strings.Join(g.Scopes, " "), "resource", g.Resource, "ua", r.UserAgent(), "kind", "jwt")
 	_ = auth.WriteAudit(r.Context(), s.Store, &v1.AuditEntry{
 		ActorUserId: g.UserID, Via: "mcp", Client: g.ClientName, Action: "oauth.token", Ok: true,
-		Attributes: map[string]string{"grant_id": g.ID, "scopes": strings.Join(g.Scopes, " "), "resource": g.Resource, "ua": r.UserAgent()},
+		Attributes: map[string]string{"grant_id": g.ID, "scopes": strings.Join(g.Scopes, " "), "resource": g.Resource, "ua": r.UserAgent(), "kind": "jwt"},
 	})
 	writeJSON(w, 200, map[string]any{"access_token": at, "token_type": "Bearer", "expires_in": int(s.accessTTL().Seconds()),
 		"refresh_token": refresh, "scope": strings.Join(g.Scopes, " ")})
@@ -729,8 +742,6 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c *Client)
 	secret := randString(32)
 	g := &auth.Grant{ID: ids.New(), ClientID: c.ID, ClientName: c.Name, UserID: u.Id, Scopes: scopes, Resource: cp.Resource,
 		CreatedAt: time.Now().UTC(), RefreshHash: hash(secret), RefreshExpires: time.Now().Add(s.refreshTTL())}
-	// Mint the access token before the first PutGrant so a concurrent /mcp
-	// on another node never sees a grant without AccessHash (replication race).
 	cp.Used, cp.GrantID = true, g.ID
 	_ = s.putPending(ctx, id, cp)
 	s.issue(w, r, g, RefreshPrefix+g.ID+"."+secret)

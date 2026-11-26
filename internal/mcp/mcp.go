@@ -124,23 +124,37 @@ func (s *Server) Handler() http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		hasAuth := strings.TrimSpace(r.Header.Get("Authorization")) != ""
+		bearer := auth.BearerFromHeader(r.Header.Get("Authorization"))
+		hasAuth := bearer != ""
 		opts := &sdkauth.RequireBearerTokenOptions{AllowMissingExpiration: true, Scopes: []string{auth.ScopeRead}}
 		if s.cfg.OAuth != nil {
 			opts.ResourceMetadataURL = s.cfg.OAuth.ResourceMetadataURL(r)
 		}
 		rec := &statusRecorder{ResponseWriter: w, code: 200}
-		sdkauth.RequireBearerToken(s.verify, opts)(limited).ServeHTTP(rec, r)
+		verify := func(ctx context.Context, token string, req *http.Request) (*sdkauth.TokenInfo, error) {
+			ti, err := s.verify(ctx, token, req)
+			if err != nil {
+				rec.err = err.Error()
+				s.log.Info("mcp auth failed", "err", err.Error(), "token_kind", tokenPrefix(token))
+			}
+			return ti, err
+		}
+		sdkauth.RequireBearerToken(verify, opts)(limited).ServeHTTP(rec, r)
 		if hasAuth {
+			kind := tokenPrefix(bearer)
 			s.log.Info("mcp request", "method", r.Method, "status", rec.code, "ua", r.UserAgent(),
-				"proto", r.Header.Get("MCP-Protocol-Version"), "auth", true)
+				"proto", r.Header.Get("MCP-Protocol-Version"), "auth", true, "token_kind", kind, "err", rec.err)
 			ok := rec.code < 400
+			attrs := map[string]string{
+				"status": strconv.Itoa(rec.code), "ua": r.UserAgent(),
+				"method": r.Method, "proto": r.Header.Get("MCP-Protocol-Version"),
+				"token_kind": kind,
+			}
+			if rec.err != "" {
+				attrs["error"] = rec.err
+			}
 			_ = auth.WriteAudit(r.Context(), s.cfg.Store, &v1.AuditEntry{
-				Via: "mcp", Action: "mcp.auth", Ok: ok,
-				Attributes: map[string]string{
-					"status": strconv.Itoa(rec.code), "ua": r.UserAgent(),
-					"method": r.Method, "proto": r.Header.Get("MCP-Protocol-Version"),
-				},
+				Via: "mcp", Action: "mcp.auth", Ok: ok, Error: rec.err, Attributes: attrs,
 			})
 		}
 	})
@@ -149,6 +163,7 @@ func (s *Server) Handler() http.Handler {
 type statusRecorder struct {
 	http.ResponseWriter
 	code int
+	err  string
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
@@ -160,7 +175,6 @@ func (s *statusRecorder) WriteHeader(code int) {
 func (s *Server) verify(ctx context.Context, token string, _ *http.Request) (*sdkauth.TokenInfo, error) {
 	p, err := s.cfg.Auth.Authenticate(ctx, token)
 	if err != nil {
-		s.log.Info("mcp auth failed", "err", err.Error(), "token_prefix", tokenPrefix(token))
 		if errors.Is(err, auth.ErrInvalidToken) {
 			return nil, fmt.Errorf("%w: %v", sdkauth.ErrInvalidToken, err)
 		}
@@ -172,6 +186,9 @@ func (s *Server) verify(ctx context.Context, token string, _ *http.Request) (*sd
 			scopes = append(scopes, l.String())
 		}
 	}
+	if len(scopes) == 0 {
+		return nil, fmt.Errorf("%w: no usable scopes on credential", sdkauth.ErrInvalidToken)
+	}
 	ti := &sdkauth.TokenInfo{Scopes: scopes, UserID: p.UserID, Extra: map[string]any{"principal": p}}
 	if !p.Expires.IsZero() {
 		ti.Expiration = p.Expires
@@ -180,10 +197,19 @@ func (s *Server) verify(ctx context.Context, token string, _ *http.Request) (*sd
 }
 
 func tokenPrefix(t string) string {
-	if len(t) > 12 {
-		return t[:12] + "…"
+	switch {
+	case strings.HasPrefix(t, auth.OAuthAccessPrefix):
+		return auth.OAuthAccessPrefix + "…"
+	case strings.HasPrefix(t, auth.TokenPrefix):
+		return auth.TokenPrefix + "…"
+	case strings.Count(t, ".") == 2:
+		return "jwt…"
+	default:
+		if len(t) > 12 {
+			return t[:12] + "…"
+		}
+		return t
 	}
-	return t
 }
 
 func principalOf(ti *sdkauth.TokenInfo) *auth.Principal {

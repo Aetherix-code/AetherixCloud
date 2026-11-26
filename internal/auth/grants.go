@@ -12,15 +12,14 @@ import (
 	"github.com/aetherix/aetherixcloud/internal/store"
 )
 
-// OAuthAccessPrefix marks opaque OAuth access tokens (axa_<grantID>.<secret>).
-// Opaque tokens avoid clients trying to verify our HS256 JWTs without a JWKS.
+// OAuthAccessPrefix marks legacy opaque OAuth access tokens (axa_<grantID>.<secret>).
+// New access tokens are HS256 JWTs; axa_ tokens remain verifiable until they expire.
 const OAuthAccessPrefix = "axa_"
 
 // Grant is an OAuth grant (one user authorising one MCP connector). Access
-// tokens are opaque secrets referencing the grant; revoking the grant
-// (tombstone) invalidates them on every node. Stored in oauth_grants with
-// Kind "grant". Legacy JWT access tokens (typ=oauth) are still accepted until
-// they expire.
+// tokens are HS256 JWTs (typ=oauth); revoking the grant invalidates them on
+// every node once the grant row is visible. Stored in oauth_grants with Kind
+// "grant". Legacy opaque axa_ tokens (AccessHash) are still accepted until expiry.
 type Grant struct {
 	Kind       string    `json:"kind"` // "grant"
 	ID         string    `json:"id"`
@@ -73,7 +72,10 @@ func SplitOAuthAccess(t string) (grantID, secret string, ok bool) {
 
 // AccessMatches reports whether plaintext matches the grant's current access token.
 func AccessMatches(g *Grant, secret string) bool {
-	if g == nil || g.AccessHash == "" || secret == "" || time.Now().After(g.AccessExpires) {
+	if g == nil || g.AccessHash == "" || secret == "" {
+		return false
+	}
+	if !g.AccessExpires.IsZero() && time.Now().After(g.AccessExpires) {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(hashSecret(secret)), []byte(g.AccessHash)) == 1
