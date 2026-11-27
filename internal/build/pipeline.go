@@ -91,12 +91,20 @@ func (p *Pipeline) Run(ctx context.Context, j Job) (*Result, error) {
 		Image: image, CacheRef: CacheRefFor(j.Project, j.Service), Target: plan.Target,
 	}
 	res := &Result{Provider: plan.Provider, Image: image, Plan: plan}
+	if n := len(j.Secrets); n > 0 {
+		fmt.Fprintf(log, "==> build env: %d variables\n", n)
+	}
 	switch plan.Provider {
 	case ProviderDockerfile, ProviderCompose:
 		req.Frontend = "dockerfile.v0"
 		req.ContextDir = plan.ContextDir
 		req.DockerfileDir = filepath.Dir(plan.Dockerfile)
 		req.Filename = filepath.Base(plan.Dockerfile)
+		// Also expose variables as build-args so Dockerfiles can use ARG KEY
+		// without RUN --mount=type=secret (secrets remain available as mounts too).
+		if len(j.Secrets) > 0 {
+			req.Args = mergeArgs(plan.Args, j.Secrets)
+		}
 	case ProviderRailpack:
 		work, err := p.tmp()
 		if err != nil {

@@ -51,8 +51,8 @@ type Reporter interface {
 // DeployFunc creates a deployment (deploy.Start by default).
 type DeployFunc func(ctx context.Context, st store.Store, svc *v1.Service, o deploy.StartOptions) (*v1.Deployment, error)
 
-// BuildSecretPrefix marks variables that are passed to builds as BuildKit
-// secrets (prefix stripped). All other variables stay runtime-only.
+// BuildSecretPrefix is an optional alias: BUILD_SECRET_FOO is also exposed to
+// the build as FOO (backwards compatible with the old build-only prefix).
 const BuildSecretPrefix = "BUILD_SECRET_"
 
 // Worker runs queued builds on a machine with the builder role.
@@ -510,27 +510,49 @@ func (w *Worker) event(ctx context.Context, typ string, b *v1.Build, msg string)
 		Time: timestamppb.Now(), Attributes: map[string]string{"service_id": b.ServiceId}})
 }
 
-// buildSecrets collects BUILD_SECRET_* variables of the service's environment.
+// buildSecrets collects every variable available to svc for the build:
+// spec.env, then shared environment variables, then service variables
+// (later wins). Values are passed to Railpack as --env and to BuildKit as
+// secrets (Dockerfile: RUN --mount=type=secret,id=KEY). BUILD_SECRET_FOO is
+// also exposed as FOO for older configs.
 func (w *Worker) buildSecrets(ctx context.Context, svc *v1.Service) map[string]string {
+	out := map[string]string{}
+	if svc.Spec != nil {
+		for k, v := range svc.Spec.Env {
+			if k != "" {
+				out[k] = v
+			}
+		}
+	}
 	vars, err := store.ListProto[v1.Variable](ctx, w.Store, store.TableVariables, store.Query{Where: map[string]string{"environment_id": svc.EnvironmentId}})
 	if err != nil {
-		return nil
+		if len(out) == 0 {
+			return nil
+		}
+		return out
 	}
-	out := map[string]string{}
 	for _, pass := range []string{"", svc.Id} { // shared first, service overrides
 		for _, v := range vars {
-			if v.ServiceId != pass || !strings.HasPrefix(v.Key, BuildSecretPrefix) {
+			if v.ServiceId != pass || v.Key == "" {
 				continue
 			}
 			val := v.Value
 			if v.Secret {
+				if w.Key == (secrets.Key{}) {
+					continue
+				}
 				bs, err := w.Key.Open(val)
 				if err != nil {
 					continue
 				}
 				val = string(bs)
 			}
-			out[strings.TrimPrefix(v.Key, BuildSecretPrefix)] = val
+			out[v.Key] = val
+			if strings.HasPrefix(v.Key, BuildSecretPrefix) {
+				if short := strings.TrimPrefix(v.Key, BuildSecretPrefix); short != "" {
+					out[short] = val
+				}
+			}
 		}
 	}
 	if len(out) == 0 {

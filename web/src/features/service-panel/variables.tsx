@@ -145,7 +145,7 @@ function Editor({ service, environmentId, initial, services, allVars }: { servic
         </CheckboxField>
         <Button size="sm" onClick={doSave} disabled={(!dirty && !raw) || save.isPending}>{save.isPending ? 'Saving…' : 'Save changes'}</Button>
       </div>
-      <p className="text-xs text-muted-foreground">Use <code className="rounded bg-muted px-1">{'${{service.KEY}}'}</code> to reference another service’s variable. References also draw the edges on the project canvas. Secret values are never sent back to the browser.</p>
+      <p className="text-xs text-muted-foreground">Variables are available at build time and at runtime. Use <code className="rounded bg-muted px-1">{'${{service.KEY}}'}</code> to reference another service’s variable. References also draw the edges on the project canvas. Secret values are never sent back to the browser.</p>
     </div>
   )
 }

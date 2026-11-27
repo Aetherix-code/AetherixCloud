@@ -199,6 +199,29 @@ func TestImageRef(t *testing.T) {
 	require.Equal(t, "127.0.0.1:5000/ax-cache/p/s:buildcache", CacheRefFor("p", "s"))
 }
 
+func TestBuildSecretsIncludesAllVars(t *testing.T) {
+	w, st := newWorker(t, &fakeBK{}, fakeSource{}, nil)
+	svc := putSvc(t, st)
+	svc.Spec.Env = map[string]string{"FROM_SPEC": "s"}
+	require.NoError(t, store.PutService(context.Background(), st, svc))
+	require.NoError(t, store.PutProto(context.Background(), st, store.TableVariables, "v1",
+		map[string]string{"environment_id": "e1", "service_id": "", "key": "SHARED"},
+		&v1.Variable{Id: "v1", EnvironmentId: "e1", Key: "SHARED", Value: "shared"}))
+	require.NoError(t, store.PutProto(context.Background(), st, store.TableVariables, "v2",
+		map[string]string{"environment_id": "e1", "service_id": svc.Id, "key": "SHARED"},
+		&v1.Variable{Id: "v2", EnvironmentId: "e1", ServiceId: svc.Id, Key: "SHARED", Value: "override"}))
+	require.NoError(t, store.PutProto(context.Background(), st, store.TableVariables, "v3",
+		map[string]string{"environment_id": "e1", "service_id": svc.Id, "key": BuildSecretPrefix + "TOKEN"},
+		&v1.Variable{Id: "v3", EnvironmentId: "e1", ServiceId: svc.Id, Key: BuildSecretPrefix + "TOKEN", Value: "t"}))
+	got := w.buildSecrets(context.Background(), svc)
+	require.Equal(t, map[string]string{
+		"FROM_SPEC":              "s",
+		"SHARED":                 "override",
+		"BUILD_SECRET_TOKEN":     "t",
+		"TOKEN":                  "t",
+	}, got)
+}
+
 // ---- pipeline
 
 func TestPipelineDockerfile(t *testing.T) {
@@ -219,8 +242,10 @@ func TestPipelineDockerfile(t *testing.T) {
 	require.Equal(t, "Dockerfile", r.Filename)
 	require.Equal(t, "linux/amd64", r.Platform)
 	require.Equal(t, map[string]string{"TOKEN": "v"}, r.Secrets)
+	require.Equal(t, map[string]string{"X": "1", "TOKEN": "v"}, r.Args)
 	require.Equal(t, "127.0.0.1:5000/ax-cache/proj/web:buildcache", r.CacheRef)
 	require.Contains(t, log.String(), "detected build type: dockerfile")
+	require.Contains(t, log.String(), "build env: 1 variables")
 }
 
 func TestPipelineRailpack(t *testing.T) {
@@ -460,8 +485,14 @@ func TestWorkerBuildsAndDeploys(t *testing.T) {
 	require.Equal(t, "sha256:abc", deployed.ImageDigest)
 	require.Equal(t, b.Id, deployed.BuildID)
 	require.Equal(t, "msg", deployed.CommitMsg)
-	// only BUILD_SECRET_* variables reach the build, prefix stripped
-	require.Equal(t, map[string]string{"NPM_TOKEN": "tok"}, bk.reqs[0].Secrets)
+	// all service/env variables reach the build; BUILD_SECRET_FOO is also exposed as FOO
+	require.Equal(t, map[string]string{
+		"BUILD_SECRET_NPM_TOKEN": "tok",
+		"NPM_TOKEN":              "tok",
+		"RUNTIME_ONLY":           "x",
+	}, bk.reqs[0].Secrets)
+	require.Equal(t, "x", bk.reqs[0].Args["RUNTIME_ONLY"])
+	require.Equal(t, "tok", bk.reqs[0].Args["NPM_TOKEN"])
 	// the service now points at the built image
 	s2, _ := store.GetService(ctx, st, svc.Id)
 	require.Equal(t, cur.Image, s2.Spec.Image)
